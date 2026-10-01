@@ -95,6 +95,9 @@ shared understanding of what this app is for)_
 
 ## App-specific conventions
 
-_(optional — e.g. "all currency values stored as integer cents, not
-floats"; "the `posts` table is append-only"; "avoid adding new
-dependencies"; etc.)_
+- `proposals`, `proposal_votes` and `proposal_status_events` are
+  `staging:private` (drafts are author-only, votes record how a named person
+  voted). Staging seeds fake "Staging demo" proposals and voters with ids
+  900001 and up; never seed rows or votes for the visitor.
+- Vote counts are never stored as counters; they are counted from
+  `proposal_votes` on read.

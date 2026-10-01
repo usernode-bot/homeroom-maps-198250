@@ -79,6 +79,15 @@ export function createMapService(mapConfig, { onState, onAttribution, force = nu
     setUserLocation(location) {
       adapter && adapter.setUserLocation(location);
     },
+    // Route rendering (Directions). The screen builds the feature list from
+    // real provider geometry; the service only forwards it, keeping the
+    // screen renderer-agnostic like every other operation.
+    setRoutes(routes) {
+      adapter && adapter.setRoutes(routes);
+    },
+    fitBounds(bounds, opts) {
+      adapter && adapter.fitBounds(bounds, opts);
+    },
     destroy() {
       destroyed = true;
       if (adapter) adapter.destroy();

@@ -18,6 +18,13 @@
 //   setStyle(styleUrl)                 -> swap basemap style, keep camera
 //   setUserLocation({ lat, lng, accuracy }) -> marker + accuracy circle, or
 //                                             clear it when passed null
+//   setRoutes([{ coordinates: [[lng, lat], ...], selected }] | null)
+//                                      -> draw route lines (Directions), or
+//                                         clear them when passed null; data
+//                                         set before the style is ready is
+//                                         held and applied on load
+//   fitBounds({ west, south, east, north }, opts?) -> fit the camera to a
+//                                         route's bounds (Directions)
 //   capabilities                       -> { rotation, touchGestures, accuracyCircle }
 //   destroy()                          -> remove the map and listeners
 

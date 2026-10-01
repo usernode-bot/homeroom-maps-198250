@@ -1,40 +1,69 @@
-// Community service — INTERFACE ONLY. Phase 0 defines the contract the later
-// community work plugs into; there is no backend behind any of it and no
-// database table. Every function resolves a clearly empty/placeholder shape so
-// a screen can be wired against a stable API without faking results.
+// Community service — the browser half of the community API.
 //
-// Entity shapes later stages should populate (comments only, no implementation):
-//   Proposal   { id, title, body, author, status, createdAt, voteCounts }
-//   Vote       { proposalId, userId, choice, createdAt }
-//   Report     { id, category, location, note, author, status, createdAt }
-//   Contribution { id, kind, placeId, payload, author, status, createdAt }
-//   Discussion { id, topic, author, createdAt }
-//   DiscussionMessage { id, discussionId, author, body, createdAt }
+// Proposals and voting are real (Phase 5): every call goes to
+// /api/community/* and every number on screen is what the server returned.
+// Reports, contributions and discussions are later phases; their functions
+// stay as clearly empty interfaces so no screen can fake them.
 //
-// The matching server routes (/api/community/*) currently answer 501
-// not_implemented, so nothing here silently invents data.
+// Proposal shape (from community/store.js):
+//   { id, author: { id, username }, title, description, category,
+//     categoryLabel, location: { name, lat, lng } | null, attachments: [],
+//     status, statusLabel, createdAt, publishedAt, statusChangedAt,
+//     votes: { up, down, score }, distanceKm?,
+//     viewer: { isAuthor, vote, canEdit, canVote, transitions,
+//               editBlockedReason, voteBlockedReason },
+//     history?: [{ from, to, toLabel, actor, at }] }
+import { apiGet, apiSend } from '../api.js';
+import { feedPath, voteRequest } from './community-feed.js';
 
-const NOT_IMPLEMENTED = 'The community features are not built yet.';
+let metaPromise = null;
 
-export async function listProposals() {
-  return { items: [], notImplemented: true, reason: NOT_IMPLEMENTED };
+// Categories, statuses and the viewer's role. Cached for the session; a
+// failure is not cached, so the next call retries.
+export function fetchMeta() {
+  if (!metaPromise) {
+    metaPromise = apiGet('/api/community/meta').catch((err) => {
+      metaPromise = null;
+      throw err;
+    });
+  }
+  return metaPromise;
 }
 
-export async function getProposal(_id) {
-  return null;
+export function listProposals(view, { offset = 0, near = null, radiusKm = null } = {}) {
+  return apiGet(feedPath(view, { offset, near, radiusKm }));
 }
 
-export async function createProposal(_draft) {
-  throw new Error(NOT_IMPLEMENTED);
+export function getProposal(id) {
+  return apiGet(`/api/community/proposals/${encodeURIComponent(id)}`);
 }
 
-export async function listVotes(_proposalId) {
-  return { items: [], notImplemented: true, reason: NOT_IMPLEMENTED };
+// `draft` is { title, description, category, location, attachments }.
+// publish: true opens it for votes straight away; otherwise it is a draft.
+export function createProposal(draft, { publish = false } = {}) {
+  return apiSend('POST', '/api/community/proposals', { ...draft, publish });
 }
 
-export async function castVote(_proposalId, _choice) {
-  throw new Error(NOT_IMPLEMENTED);
+export function updateProposal(id, patch) {
+  return apiSend('PATCH', `/api/community/proposals/${encodeURIComponent(id)}`, patch);
 }
+
+export function changeStatus(id, status) {
+  return apiSend('POST', `/api/community/proposals/${encodeURIComponent(id)}/status`, { status });
+}
+
+// Tap semantics live in the core: the same direction again withdraws.
+// Resolves { proposal, outcome } where outcome is cast | changed | removed |
+// unchanged.
+export function castVote(id, currentVote, pressed) {
+  const req = voteRequest(currentVote, pressed);
+  const path = `/api/community/proposals/${encodeURIComponent(id)}/vote`;
+  return req.method === 'DELETE' ? apiSend('DELETE', path) : apiSend('PUT', path, { value: req.value });
+}
+
+// ── later phases: interfaces only ─────────────────────────────────────────
+
+const NOT_IMPLEMENTED = 'This community feature is not built yet.';
 
 export async function listReports(_area) {
   return { items: [], notImplemented: true, reason: NOT_IMPLEMENTED };
