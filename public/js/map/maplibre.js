@@ -26,6 +26,14 @@ const WORLD_ZOOM = 1;
 
 const MARKER_COLOR = '#4f46e5';
 
+// Route line colours. The selected route is the app's brand indigo (the same
+// colour the user-location marker uses); the casing underneath keeps it
+// legible over every basemap, and alternatives are muted grey so the primary
+// route always reads first.
+const ROUTE_COLOR = '#4f46e5';
+const ROUTE_CASING_COLOR = '#312e81';
+const ROUTE_ALTERNATIVE_COLOR = '#6b7280';
+
 let loaderPromise = null;
 
 // Load the vendored renderer exactly once, whoever asks first. Resolves with
@@ -96,6 +104,8 @@ export function createMapLibreAdapter(mapConfig) {
   let accuracySource = false;
   let resizeObserver = null;
   let readyReported = false;
+  let routes = null; // the last setRoutes() payload, applied when layers exist
+  let routeLayersReady = false;
 
   const capabilities = {
     rotation: true,
@@ -193,6 +203,7 @@ export function createMapLibreAdapter(mapConfig) {
     map.on('load', () => {
       if (destroyed) return;
       ensureAccuracyLayer();
+      if (routes) applyRoutes(routes);
       readAttribution(onAttribution);
       if (onState && !readyReported) {
         readyReported = true;
@@ -203,6 +214,13 @@ export function createMapLibreAdapter(mapConfig) {
     map.on('styledata', () => {
       if (destroyed) return;
       readAttribution(onAttribution);
+      // A style swap (the theme change does one) drops every custom source
+      // and layer. When a route is showing, re-add the route layers so the
+      // route survives the swap.
+      if (map.isStyleLoaded() && routes) {
+        routeLayersReady = false;
+        applyRoutes(routes);
+      }
     });
 
     // Keep the canvas sized to its frame (theme/text reflow, keyboard, the
@@ -234,6 +252,83 @@ export function createMapLibreAdapter(mapConfig) {
       paint: { 'line-color': MARKER_COLOR, 'line-opacity': 0.5, 'line-width': 1 },
     });
     accuracySource = true;
+  }
+
+  // ── route rendering ────────────────────────────────────────────────────
+  //
+  // One GeoJSON source carries every route line; three line layers style it
+  // (casing under the selected route, muted alternatives, selected on top).
+  // The layers are inserted BEFORE the style's first symbol layer so place
+  // labels stay readable above the route.
+
+  function applyRoutes(routeList) {
+    if (!map || !map.isStyleLoaded()) return;
+    if (!ensureRouteLayers()) return;
+    try {
+      map.getSource('hm-routes').setData(routesFeatureCollection(routeList));
+    } catch (err) {
+      console.warn('[map] route render failed: ' + (err && err.message));
+    }
+  }
+
+  function clearRouteSource() {
+    try {
+      map.getSource('hm-routes').setData({ type: 'FeatureCollection', features: [] });
+    } catch {
+      /* the source is already gone (style swapped) */
+    }
+  }
+
+  function ensureRouteLayers() {
+    if (!map || routeLayersReady || !map.isStyleLoaded()) return false;
+    try {
+      if (!map.getSource('hm-routes')) {
+        map.addSource('hm-routes', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+      }
+      const style = map.getStyle();
+      const firstSymbol = Array.isArray(style && style.layers)
+        ? style.layers.find((l) => l.type === 'symbol')
+        : null;
+      const beforeId = firstSymbol ? firstSymbol.id : undefined;
+      // Insertion order = stacking order: alternatives sit beneath the
+      // casing, and the selected route on top of both.
+      map.addLayer(routeLayer('hm-routes-alt', { 'line-color': ROUTE_ALTERNATIVE_COLOR, 'line-width': 4, 'line-opacity': 0.7 }), beforeId);
+      map.addLayer(routeLayer('hm-routes-casing', { 'line-color': ROUTE_CASING_COLOR, 'line-width': 9, 'line-opacity': 0.4 }), beforeId);
+      map.addLayer(routeLayer('hm-routes-main', { 'line-color': ROUTE_COLOR, 'line-width': 6 }), beforeId);
+      routeLayersReady = true;
+      return true;
+    } catch (err) {
+      console.warn('[map] route layers failed: ' + (err && err.message));
+      return false;
+    }
+  }
+
+  function routeLayer(id, paint) {
+    return {
+      id,
+      type: 'line',
+      source: 'hm-routes',
+      filter: ['==', ['get', 'selected'], id === 'hm-routes-main' || id === 'hm-routes-casing'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint,
+    };
+  }
+
+  function routesFeatureCollection(routeList) {
+    return {
+      type: 'FeatureCollection',
+      features: routeList.map((route) => ({
+        type: 'Feature',
+        properties: { selected: Boolean(route.selected) },
+        geometry: {
+          type: 'LineString',
+          coordinates: route.coordinates,
+        },
+      })),
+    };
   }
 
   return {
@@ -303,6 +398,31 @@ export function createMapLibreAdapter(mapConfig) {
       } else if (accuracySource) {
         map.getSource('user-accuracy').setData({ type: 'FeatureCollection', features: [] });
       }
+    },
+
+    // `routes` is an array of { coordinates: [[lng, lat], ...], selected }
+    // or null to clear. Each becomes a GeoJSON line feature; the selected
+    // route draws on top (brand colour, cased) and alternatives sit beneath
+    // it, muted. Data set before the style is ready is held and applied on
+    // load, so a screen never has to wait for the map first.
+    setRoutes(nextRoutes) {
+      routes = Array.isArray(nextRoutes) && nextRoutes.length ? nextRoutes : null;
+      if (routes && map && map.isStyleLoaded()) applyRoutes(routes);
+      else if (!routes && map && map.isStyleLoaded() && routeLayersReady) {
+        clearRouteSource();
+      }
+    },
+
+    fitBounds(bounds, opts = {}) {
+      if (!map || !bounds) return;
+      const sw = [bounds.west, bounds.south];
+      const ne = [bounds.east, bounds.north];
+      if (![...sw, ...ne].every(Number.isFinite)) return;
+      map.fitBounds([sw, ne], {
+        padding: opts.padding || 48,
+        maxZoom: opts.maxZoom || 16,
+        duration: prefersReducedMotion() ? 0 : 800,
+      });
     },
 
     destroy() {

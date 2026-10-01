@@ -142,6 +142,38 @@ const PHOTON_URL = (process.env.PHOTON_URL || 'https://photon.komoot.io')
 const PELIAS_URL = (process.env.PELIAS_URL || '').trim().replace(/\/+$/, '');
 const PELIAS_API_KEY = (process.env.PELIAS_API_KEY || '').trim();
 
+// ── Routing configuration ─────────────────────────────────────────────────
+// Same posture as the search stack: the active routing provider is
+// configuration, never code, and the keyless default (OSRM's public demo
+// server, car profile) keeps the app working with no secret at all. An API
+// key for a commercial provider gets declared in dapp.json by the change
+// that implements its adapter.
+const ROUTING_PROVIDER = (process.env.ROUTING_PROVIDER || 'osrm')
+  .trim()
+  .toLowerCase();
+const OSRM_URL = (process.env.OSRM_URL || 'https://router.project-osrm.org')
+  .trim()
+  .replace(/\/+$/, '');
+
+// An OSRM server serves the profiles it was built with, and the public demo
+// server is car-only. OSRM_PROFILES maps the app's travel modes onto OSRM
+// profile names ("driving:driving,walking:foot,cycling:bike"); a mode that
+// is absent means the configured endpoint does not serve it, so it is
+// REFUSED (unsupported_mode) rather than pretended. A self-hosted
+// multi-profile deployment enables walking and cycling purely through this
+// setting.
+const OSRM_PROFILES = parseOsrmProfiles(process.env.OSRM_PROFILES || 'driving:driving');
+
+function parseOsrmProfiles(raw) {
+  const profiles = {};
+  for (const pair of String(raw).split(',')) {
+    const [mode, profile] = pair.split(':').map((s) => s && s.trim());
+    if (!mode || !profile) continue;
+    profiles[mode] = profile;
+  }
+  return profiles;
+}
+
 // Community reviewers: comma-separated platform usernames allowed to move
 // proposals through review (Under Review, Accepted, Rejected, Implemented).
 // Declared in dapp.json (required: false). Unset means nobody can review yet,
@@ -181,6 +213,9 @@ module.exports = {
   PHOTON_URL,
   PELIAS_URL,
   PELIAS_API_KEY,
+  ROUTING_PROVIDER,
+  OSRM_URL,
+  OSRM_PROFILES,
   COMMUNITY_REVIEWERS,
   PLACE_PROVIDER,
 };

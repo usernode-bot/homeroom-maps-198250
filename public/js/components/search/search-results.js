@@ -31,8 +31,10 @@ function keepFocus(e) {
   e.preventDefault();
 }
 
-// One suggestion/recent row: name on top, detail line beneath.
-function resultRow({ optionId, iconName, result, active, onSelect }) {
+// One suggestion/recent row: name on top, detail line beneath. Exported so
+// the Directions screen's location fields reuse the exact same row markup
+// and interaction (the panel there is built on the same search session).
+export function resultRow({ optionId, iconName, result, active, onSelect }) {
   const row = el(
     'button',
     {

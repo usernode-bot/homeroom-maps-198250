@@ -23,20 +23,28 @@ export function hashFor(name) {
   return '#/' + (name === 'home' ? '' : name);
 }
 
-// The screen named by the current fragment, or Home for an unknown/empty one.
-// A query after the screen name (`#/community?view=popular`) is screen state,
-// read with hashParams(); it does not change which screen opens.
-export function parseHash() {
-  const raw = decodeURIComponent(
-    window.location.hash.replace(/^#\/?/, '').split('?')[0],
-  ).replace(/\/+$/, '');
-  return routes.has(raw) ? raw : 'home';
+// Split the fragment into its route path and its query part, before any
+// decoding, so an encoded `?to=Berlin%2C52.52%2C13.405` hand-off keeps its
+// encoded separators intact (the Place Detail -> Directions deep link).
+function splitHash() {
+  const raw = window.location.hash.replace(/^#\/?/, '');
+  const q = raw.indexOf('?');
+  return q < 0 ? [raw, ''] : [raw.slice(0, q), raw.slice(q + 1)];
 }
 
+// The screen named by the current fragment, or Home for an unknown/empty one.
+// A `?query` on the fragment never changes which screen it names.
+export function parseHash() {
+  const [path] = splitHash();
+  const clean = decodeURIComponent(path).replace(/\/+$/, '');
+  return routes.has(clean) ? clean : 'home';
+}
+
+// The current fragment's query, decoded like a URL query string. Screens read
+// their deep-link parameters from here instead of re-parsing the hash.
 export function hashParams() {
-  const hash = window.location.hash;
-  const q = hash.indexOf('?');
-  return new URLSearchParams(q >= 0 ? hash.slice(q + 1) : '');
+  const [, query] = splitHash();
+  return new URLSearchParams(query);
 }
 
 // Rewrite the current screen's hash query without a navigation (no

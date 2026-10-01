@@ -15,6 +15,24 @@
       "default": "https://photon.komoot.io"
     },
     {
+      "key": "ROUTING_PROVIDER",
+      "description": "Which routing provider adapter to use (osrm, valhalla, graphhopper). Defaults to osrm, which needs no key.",
+      "required": false,
+      "default": "osrm"
+    },
+    {
+      "key": "OSRM_URL",
+      "description": "Base URL of the OSRM server. Defaults to the public demo server; point it at a self-hosted instance to scale past its soft limits.",
+      "required": false,
+      "default": "https://router.project-osrm.org"
+    },
+    {
+      "key": "OSRM_PROFILES",
+      "description": "Travel modes the OSRM server actually serves, as mode:profile pairs (comma separated, e.g. driving:driving,walking:foot,cycling:bike). A mode left out is refused as unsupported. The public demo server serves driving only.",
+      "required": false,
+      "default": "driving:driving"
+    },
+    {
       "key": "COMMUNITY_REVIEWERS",
       "description": "Comma-separated Homeroom usernames who may review community proposals (start review, accept, reject, mark implemented). Leave empty until reviewers are chosen; nobody can review while it is empty.",
       "required": false,
@@ -91,9 +109,29 @@
       ]
     },
     {
-      "name": "Directions opens",
+      "id": "directions.form",
+      "name": "Directions form renders",
       "path": "/#/directions",
-      "expectText": "Route planning and navigation will appear here."
+      "expectSelector": "[data-directions-form]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "public/js/**",
+        "public/js/screens/directions.js",
+        "public/js/services/routing*.js",
+        "public/js/components/route-summary.js",
+        "routing/**",
+        "styles/**",
+        "tailwind.config.js",
+        "Dockerfile",
+        "package.json"
+      ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Directions destination prefills from a place link",
+      "path": "/#/directions?to=Berlin%2C52.52%2C13.405",
+      "expectText": "Berlin"
     },
     {
       "name": "Community opens",
