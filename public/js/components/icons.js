@@ -16,6 +16,12 @@ const PATHS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4-4"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   history: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  pin: '<path d="M20 10c0 6-8 11-8 11s-8-5-8-11a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  swap:
+    '<path d="M7 4v13"/><path d="m3 13 4 4 4-4"/><path d="M17 20V7"/><path d="m13 11 4-4 4 4"/>',
+  plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+  'arrow-up': '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+  'arrow-down': '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
 };
 
 export function icon(name, { class: extra = 'h-5 w-5' } = {}) {

@@ -23,6 +23,8 @@ export function createUnsupportedAdapter({ kind, reason }) {
     setBearing() {},
     setStyle() {},
     setUserLocation() {},
+    setRoutes() {},
+    fitBounds() {},
     destroy() {},
   };
 }

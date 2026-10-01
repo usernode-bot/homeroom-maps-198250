@@ -13,6 +13,7 @@ const {
 } = require('./config');
 const searchApi = require('./search');
 const { firstAcceptLanguage } = require('./search/normalize');
+const routingApi = require('./routing');
 
 const app = express();
 const port = PORT;
@@ -115,20 +116,25 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // source details (style URLs, the exact attribution string) the client needs,
 // all resolved from the environment by config.js. `searchProvider` mirrors
 // it: the configured search adapter's name, or null while the active adapter
-// is a placeholder. Nothing here reads dapp.json secrets, and the keyless
-// default reads no key at all.
+// is a placeholder. `routing` carries the Directions equivalent: which
+// provider is connected, the travel modes it genuinely serves (the UI's
+// travel-mode selector is driven by exactly this), and its capabilities.
+// Nothing here reads dapp.json secrets, and the keyless
+// defaults read no key at all.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
+  const routing = routingApi.resolveRoutingConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
     mapProvider,
     map,
     searchProvider: searchApi.activeProviderName(),
+    routing,
     features: {
       map: Boolean(map.configured),
       search: true,
-      directions: false,
+      directions: Boolean(routing.configured),
       communityVoting: false,
       ai: false,
       traffic: false,
@@ -194,13 +200,48 @@ async function handleSearch(req, res, mode) {
 app.get('/api/search/suggest', (req, res) => handleSearch(req, res, 'suggest'));
 app.get('/api/search', (req, res) => handleSearch(req, res, 'search'));
 
-// Deferred API surface for later stages (Phase 0 ships no map, directions or
-// community backend; /api/search is now real). A request to any of these
-// answers a clear, honest 501 rather than a fabricated result, so no screen
-// can mistake a stub for working functionality.
+// Directions — the one read route of the routing service (routing/index.js).
+// GET under /api/, so the auth gate above covers it; no provider key exists
+// for the keyless default, and a commercial adapter's key would never leave
+// the server. The typed error codes from routing/provider.js map to HTTP
+// statuses here and use the app's standard JSON error shape, so the client's
+// apiGet() turns them into typed ApiErrors for free. `no_route` is 404
+// deliberately: "no route between these points" is a legitimate answer, not
+// a failure.
+const ROUTING_ERROR_STATUS = {
+  invalid_request: 400,
+  unsupported_mode: 400,
+  no_route: 404,
+  not_configured: 501,
+  rate_limited: 429,
+  timeout: 504,
+};
+
+app.get('/api/directions', async (req, res) => {
+  try {
+    const out = await routingApi.run({
+      origin: req.query.origin,
+      destination: req.query.destination,
+      waypoints: req.query.waypoints,
+      mode: req.query.mode,
+    });
+    res.json(out);
+  } catch (err) {
+    const code = err && err.code ? err.code : 'provider_error';
+    console.warn(`[directions] ${code}: ` + (err && err.message));
+    res.status(ROUTING_ERROR_STATUS[code] || 502).json({
+      error: { code, message: (err && err.message) || 'Routing failed.' },
+    });
+  }
+});
+
+// Deferred API surface for later stages (Phase 0 shipped no map, directions
+// or community backend; /api/search and /api/directions are now real). A
+// request to any of these answers a clear, honest 501 rather than a
+// fabricated result, so no screen can mistake a stub for working
+// functionality.
 const NOT_IMPLEMENTED = [
   '/api/places',
-  '/api/directions',
   '/api/community',
   '/api/saved',
 ];
