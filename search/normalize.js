@@ -31,6 +31,26 @@ const KIND_LABELS = {
   other: 'Place',
 };
 
+// Phase 9: Indonesian labels for the same kinds. These are hand-maintained
+// translations, never machine-generated. They are applied ONLY as a
+// post-process over an already-normalized result (localizeDetailLine below)
+// when the request resolved to Indonesian — the adapters themselves stay
+// language-agnostic and keep folding the English label, exactly as Phase 2
+// shipped.
+const KIND_LABELS_ID = {
+  country: 'Negara',
+  region: 'Wilayah',
+  city: 'Kota',
+  town: 'Kota kecil',
+  village: 'Desa',
+  suburb: 'Lingkungan',
+  street: 'Jalan',
+  address: 'Alamat',
+  landmark: 'Landmark',
+  poi: 'Tempat',
+  other: 'Tempat',
+};
+
 // Trim and validate a raw query. `q` shorter than the floor after trimming
 // (i.e. empty) or longer than MAX_QUERY_LENGTH is a bad request, not an empty
 // result — the two are distinguishable states in the UI.
@@ -161,6 +181,7 @@ module.exports = {
   MAX_LIMIT,
   MAX_RADIUS_KM,
   KIND_LABELS,
+  KIND_LABELS_ID,
   validateQuery,
   parseBbox,
   parseNear,
@@ -168,5 +189,26 @@ module.exports = {
   firstAcceptLanguage,
   primarySubtag,
   detailLine,
+  localizeDetailLine,
   normalizeResult,
 };
+
+// Phase 9: rewrite the leading kind label of a detail line into the resolved
+// request language's label. detailLine folds the kind label FIRST ("City,
+// Berlin, Germany"), and falls back to the bare name when there is no label,
+// so the rewrite is exact-prefix only: anything that does not start with the
+// English label (a provider name, a mid-line match) passes through
+// untouched. Only languages with a real hand-maintained table are rewritten;
+// every other language, and null, leaves the line exactly as Phase 2 built it.
+function localizeDetailLine(detail, kind, lang) {
+  if (!detail || !kind) return detail;
+  if (primarySubtag(lang) !== 'id') return detail;
+  const localized = KIND_LABELS_ID[kind];
+  const english = KIND_LABELS[kind];
+  if (!localized || !english || localized === english) return detail;
+  if (detail === english) return localized;
+  if (detail.startsWith(english + ', ')) {
+    return localized + detail.slice(english.length);
+  }
+  return detail;
+}

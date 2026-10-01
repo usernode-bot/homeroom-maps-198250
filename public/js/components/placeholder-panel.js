@@ -5,8 +5,9 @@
 // here performs a real action.
 import { el } from './dom.js';
 import { button } from './button.js';
+import { t } from '../i18n/index.js';
 
-export function placeholderPanel({ title, description, controls = [], badge = 'Coming soon' } = {}) {
+export function placeholderPanel({ title, description, controls = [], badge = t('common.comingSoon') } = {}) {
   return el(
     'div',
     {
@@ -35,7 +36,7 @@ export function placeholderPanel({ title, description, controls = [], badge = 'C
               button(label, {
                 variant: 'secondary',
                 disabled: true,
-                attrs: { title: 'Coming soon' },
+                attrs: { title: t('common.comingSoon') },
               }),
             ),
           )

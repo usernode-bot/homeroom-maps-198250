@@ -10,13 +10,14 @@
 // management uses aria-activedescendant so the input never loses the caret.
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
+import { t } from '../../i18n/index.js';
 
 export function createSearchBar({ onInput, onFocus, onBlur, onKeydown, onClear }) {
   const input = el('input', {
     type: 'search',
     dataset: { searchInput: 'true' },
-    placeholder: 'Search places',
-    'aria-label': 'Search places',
+    placeholder: t('search.placeholder'),
+    'aria-label': t('search.placeholder'),
     role: 'combobox',
     'aria-autocomplete': 'list',
     'aria-expanded': 'false',
@@ -36,7 +37,7 @@ export function createSearchBar({ onInput, onFocus, onBlur, onKeydown, onClear }
       type: 'button',
       class:
         'absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-      'aria-label': 'Clear',
+      'aria-label': t('search.clear'),
       dataset: { searchClear: 'true' },
     },
     [icon('close', { class: 'h-4 w-4' })],

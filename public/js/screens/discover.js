@@ -21,6 +21,7 @@ import { fetchPlace } from '../services/places.js';
 import { placeFromSearchResult } from '../services/places-model.js';
 import { createPlaceDetailSession } from '../services/place-detail.js';
 import { createPlaceDetailView } from './place-detail.js';
+import { t } from '../i18n/index.js';
 
 function isAbort(err) {
   return Boolean(err && (err.name === 'AbortError' || err.code === 'ABORT_ERR'));
@@ -105,8 +106,8 @@ export async function render(ctx) {
     lastResults = [];
     listHost.replaceChildren(
       emptyState({
-        title: 'Find a place',
-        description: 'Search for a country, city, street or place to see it here.',
+        title: t('discover.idleTitle'),
+        description: t('discover.idleBody'),
       }),
     );
   }
@@ -116,7 +117,7 @@ export async function render(ctx) {
     listHost.replaceChildren(
       el('div', { class: 'flex items-center gap-3 py-2', role: 'status' }, [
         spinner(),
-        el('p', { class: 'text-sm text-muted', text: 'Searching…' }),
+        el('p', { class: 'text-sm text-muted', text: t('search.searching') }),
       ]),
     );
   }
@@ -138,8 +139,8 @@ export async function render(ctx) {
     if (!places.length) {
       listHost.replaceChildren(
         emptyState({
-          title: 'No results',
-          description: 'No matches for that search. Check the spelling or try a different name.',
+          title: t('search.noResultsTitle'),
+          description: t('discover.noResultsBody'),
         }),
       );
       return;
@@ -158,10 +159,10 @@ export async function render(ctx) {
     const rateLimited = err && err.code === 'rate_limited';
     listHost.replaceChildren(
       errorState({
-        title: rateLimited ? 'Search is busy right now' : 'Search is unavailable right now',
+        title: rateLimited ? t('search.errorBusy') : t('search.errorUnavailable'),
         description:
           (err && err.message) ||
-          'We could not reach the search service. Try again in a moment.',
+          t('search.errorFallback'),
         onRetry: () => run(q),
       }),
     );
@@ -193,7 +194,7 @@ export async function render(ctx) {
   const listHost = el('div', { class: 'flex flex-col gap-2', dataset: { placesListHost: 'true' } });
 
   ctx.content.replaceChildren(
-    el('h1', { class: 'text-xl font-semibold tracking-tight text-ink', text: 'Discover' }),
+    el('h1', { class: 'text-xl font-semibold tracking-tight text-ink', text: t('nav.discover') }),
     searchHost,
     listHost,
   );

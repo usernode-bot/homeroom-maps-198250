@@ -8,6 +8,7 @@
 // because a cross-origin frame can refuse storage), and the map-phase
 // plumbing. Recents are never sent to the server and never seeded.
 import { apiGet } from '../api.js';
+import { searchLangParam } from '../i18n/index.js';
 import {
   MIN_QUERY_LENGTH,
   DEBOUNCE_MS,
@@ -28,9 +29,20 @@ const SEARCH_LIMIT = 10;
 
 // Low-level fetches. Kept exported so a later screen (map overlay, POI list)
 // can call them without the panel session.
+//
+// Language: the active locale's subtag is sent when it is not English.
+// Omitting the param for English keeps the server's resolution (platform
+// claim, then Accept-Language, then provider default) exactly as Phase 2
+// shipped it, so English results are unchanged; non-English locales get
+// provider-localized naming through the param the server already accepts.
+function langQuery() {
+  const lang = searchLangParam();
+  return lang ? `&lang=${encodeURIComponent(lang)}` : '';
+}
+
 export async function fetchSuggest(q, { signal, limit = SUGGEST_LIMIT } = {}) {
   const body = await apiGet(
-    `/api/search/suggest?q=${encodeURIComponent(q)}&limit=${limit}`,
+    `/api/search/suggest?q=${encodeURIComponent(q)}&limit=${limit}${langQuery()}`,
     { signal },
   );
   return Array.isArray(body && body.results) ? body.results : [];
@@ -38,7 +50,7 @@ export async function fetchSuggest(q, { signal, limit = SUGGEST_LIMIT } = {}) {
 
 export async function fetchSearch(q, { signal, limit = SEARCH_LIMIT } = {}) {
   const body = await apiGet(
-    `/api/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    `/api/search?q=${encodeURIComponent(q)}&limit=${limit}${langQuery()}`,
     { signal },
   );
   return Array.isArray(body && body.results) ? body.results : [];

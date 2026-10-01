@@ -6,6 +6,12 @@ const state = {
   user: null,
   locale: null,
   themePreference: 'system',
+  // Phase 9: the resolved UI language ('en' | 'id') and the raw units
+  // preference ('system' | 'metric' | 'imperial'). Both are owned by the
+  // i18n layer (public/js/i18n/); they live here only because the shell and
+  // screens read them cross-screen.
+  language: 'en',
+  units: 'system',
   config: null,
 };
 

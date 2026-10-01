@@ -25,6 +25,8 @@ import { mapControls } from '../map/controls.js';
 import { createSearchSession } from '../services/search.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
+import { t } from '../i18n/index.js';
+import { formatDistance } from '../i18n/format.js';
 
 const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
 
@@ -130,7 +132,7 @@ export async function render(ctx) {
     class: 'h-full w-full',
     dataset: { mapCanvas: 'true' },
     role: 'img',
-    'aria-label': 'Interactive world map',
+    'aria-label': t('map.srLabel'),
   });
   const overlay = el('div', {
     class: 'absolute inset-0 flex flex-col justify-center bg-surface-raised',
@@ -159,7 +161,7 @@ export async function render(ctx) {
   container.append(surface, overlay, controls);
 
   ctx.content.replaceChildren(
-    el('h1', { class: 'sr-only', text: 'Home' }),
+    el('h1', { class: 'sr-only', text: t('nav.home') }),
 
     // Live search area: the input, the results panel beneath it, and the
     // Selected place card slot above the map frame.
@@ -174,9 +176,8 @@ export async function render(ctx) {
     attribution,
 
     placeholderPanel({
-      title: 'Places',
-      description:
-        'Points of interest, saved places and map contributions are coming soon.',
+      title: t('home.placesTitle'),
+      description: t('home.placesBody'),
     }),
   );
 
@@ -218,7 +219,7 @@ function mountMap(view, config, force = null) {
     activeService.destroy();
     activeService = null;
   }
-  showOverlay(view, loading({ label: 'Loading map' }));
+  showOverlay(view, loading({ label: t('map.loading') }));
   const service = createMapService(config, {
     force,
     onState: (state, err) => {
@@ -260,9 +261,9 @@ function onFailure(service, view, err) {
     errorState({
       title:
         kind === MapErrorKind.PROVIDER
-          ? 'The map provider could not serve the map'
-          : 'We could not load the map',
-      description: (err && err.message) || 'Check your connection and try again.',
+          ? t('map.errorProviderTitle')
+          : t('map.errorTitle'),
+      description: (err && err.message) || t('map.errorBody'),
       onRetry: () => mountMap(view, service.currentConfig()),
     }),
   );
@@ -274,12 +275,12 @@ function onFailure(service, view, err) {
 function showMessage(view, kind) {
   const copy = {
     unconfigured: {
-      title: 'Map is not configured yet',
-      body: 'No map provider is connected. Set MAP_PROVIDER and a style URL to turn the map on.',
+      title: t('map.unconfiguredTitle'),
+      body: t('map.unconfiguredBody'),
     },
     unsupported: {
-      title: 'This device cannot show the interactive map',
-      body: 'The map needs WebGL, which this browser or device does not provide. Everything else on this screen still works.',
+      title: t('map.unsupportedTitle'),
+      body: t('map.unsupportedBody'),
     },
   }[kind];
   view.controls.replaceChildren(disabledControls());
@@ -334,10 +335,10 @@ function disabledControls() {
         disabled: true,
         class:
           'un-touch-target flex h-11 items-center gap-1.5 rounded-pill border border-line bg-surface px-3 text-xs font-medium text-muted shadow-sm disabled:cursor-not-allowed disabled:opacity-70',
-        title: 'Coming soon',
+        title: t('common.comingSoon'),
         dataset: { mapControl: 'layers' },
       },
-      [el('span', { text: 'Map layers' })],
+      [el('span', { text: t('map.layers') })],
     ),
   ]);
 }
@@ -347,7 +348,7 @@ function disabledControls() {
 function renderAttribution(node, text) {
   if (!node) return;
   const parts = attributionParts(text);
-  const children = [el('span', { text: 'Map data: ' })];
+  const children = [el('span', { text: t('map.dataPrefix') })];
   parts.forEach((part, i) => {
     if (i > 0) children.push(document.createTextNode(' · '));
     children.push(
@@ -380,7 +381,7 @@ async function requestLocation(service, view) {
     // Standalone (no platform shell): a permission request would reject the
     // same way a denial does, so say the platform is needed instead of
     // pretending the user said no.
-    toast('Open Homeroom Maps inside Homeroom to use your location.', { error: true });
+    toast(t('map.needShell'), { error: true });
     return;
   }
 
@@ -388,7 +389,7 @@ async function requestLocation(service, view) {
   try {
     result = await usernode.requestPermission('geolocation');
   } catch (err) {
-    toast('We could not ask for your location. Please try again.', { error: true });
+    toast(t('map.askFailed'), { error: true });
     return;
   }
 
@@ -396,9 +397,7 @@ async function requestLocation(service, view) {
     // `declined` is the person saying no; `not_declared` would mean our
     // manifest is wrong (a bug). Either way the map stays usable.
     const message =
-      result && result.reason === 'declined'
-        ? 'Location access was declined. The map still works without it.'
-        : 'Your location is not available to the app. The map still works without it.';
+      result && result.reason === 'declined' ? t('map.declined') : t('map.notAvailable');
     showNote(view, message);
     toast(message, { error: true });
     return;
@@ -407,12 +406,12 @@ async function requestLocation(service, view) {
   if (result.active === false) {
     // Granted, and the shell is about to reload this frame to apply the
     // policy. Stop here: calling the geolocation API now would fail.
-    toast('Location enabled. Homeroom Maps will reopen to finish.', {});
+    toast(t('map.grantedReloading'), {});
     return;
   }
 
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    toast('This device cannot provide a location.', { error: true });
+    toast(t('map.noGeolocation'), { error: true });
     return;
   }
   navigator.geolocation.getCurrentPosition(
@@ -423,8 +422,8 @@ async function requestLocation(service, view) {
       showNote(
         view,
         typeof accuracy === 'number' && accuracy > 0
-          ? `Showing your location (accurate to about ${Math.round(accuracy)} m).`
-          : 'Showing your location.',
+          ? t('map.showingAccuracy', { distance: formatDistance(accuracy) })
+          : t('map.showing'),
       );
     },
     (err) => {
@@ -438,9 +437,7 @@ async function requestLocation(service, view) {
       const denied = err && err.code === err.PERMISSION_DENIED;
       const documentHolds = typeof window.usernode?.hasCapability === 'function'
         && window.usernode.hasCapability('geolocation');
-      const message = denied && documentHolds
-        ? 'Location access was denied. The map still works without it.'
-        : 'We could not determine your location right now. Please try again.';
+      const message = denied && documentHolds ? t('map.denied') : t('map.locateFailed');
       showNote(view, message);
       toast(message, { error: true });
     },
