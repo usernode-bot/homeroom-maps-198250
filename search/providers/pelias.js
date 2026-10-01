@@ -17,7 +17,7 @@
 //     housenumber, postalcode }
 'use strict';
 
-const { searchError } = require('../provider');
+const { requestJson } = require('../provider');
 const { normalizeResult, detailLine, KIND_LABELS, primarySubtag } = require('../normalize');
 
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -114,30 +114,11 @@ function createPelias({ url, apiKey = '', fetchImpl = fetch, timeoutMs = DEFAULT
   }
 
   async function request(params, endpoint) {
-    let res;
-    try {
-      res = await fetchImpl(buildUrl(params, endpoint), {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (err) {
-      if (err && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
-        throw searchError('provider_error', 'The search provider did not answer in time.');
-      }
-      throw searchError('provider_error', 'The search provider could not be reached.');
-    }
-    if (!res.ok) {
-      throw searchError(
-        'provider_error',
-        `The search provider answered with status ${res.status}.`,
-      );
-    }
-    let body;
-    try {
-      body = await res.json();
-    } catch {
-      throw searchError('provider_error', 'The search provider sent an unreadable answer.');
-    }
+    const body = await requestJson(buildUrl(params, endpoint), {
+      headers: { Accept: 'application/json' },
+      timeoutMs,
+      fetchImpl,
+    });
     const features = Array.isArray(body && body.features) ? body.features : [];
     return features.map((f) => normalizeFeature(f, 'pelias', params.lang)).filter(Boolean);
   }

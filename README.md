@@ -31,6 +31,12 @@ A global map and location platform, built together with its community.
   placeholders awaiting keys. See `docs/provider-comparison.md` for the full
   evaluation. Recent searches are device-local; nothing is invented: an
   empty answer is the no-results state and a failure is the error state.
+  Privacy posture: provider keys never leave the server, `/api/search*` sits
+  behind the platform auth gate, and recent searches never leave the device.
+  Search queries themselves are necessarily forwarded from the server IP to
+  the public geocoder and are not persisted beyond the short-lived in-memory
+  cache. Lint checks here are the test suite plus the CSS build (`npm test`,
+  `npm run build`); the repo deliberately carries no ESLint config.
 - **Environment configuration** in `config.js`, plus `GET /api/config`
   (public, non-sensitive), `GET /api/me` (the signed-in person),
   `GET /api/search` and `GET /api/search/suggest`.

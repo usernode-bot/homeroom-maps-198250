@@ -60,9 +60,24 @@ function activeProviderName() {
   }
 }
 
+// Collapse duplicates by normalized id, keeping the first occurrence. Providers
+// occasionally return the same feature under slightly different geometry; the
+// listbox must show distinct places. Runs at the one choke point every adapter
+// passes through, so it covers all providers and future ones.
+function dedupeById(results) {
+  const seen = new Set();
+  return results.filter((r) => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
+}
+
 // The single pipeline. `params` are the RAW HTTP query values; `ctx` carries
-// the resolved language preference from the request (see server.js).
-async function run(mode, params, ctx = {}) {
+// the resolved language preference from the request (see server.js). `opts`
+// exists for tests only: `providerName` overrides the configured provider so a
+// stub can exercise the pipeline without touching the network.
+async function run(mode, params, ctx = {}, opts = {}) {
   if (mode !== 'suggest' && mode !== 'search') {
     throw searchError('invalid_query', 'Unknown search mode.');
   }
@@ -72,7 +87,7 @@ async function run(mode, params, ctx = {}) {
   const near = parseNear(params.near, params.radius);
   const lang = params.lang || ctx.lang || null;
 
-  const provider = getProvider(SEARCH_PROVIDER);
+  const provider = getProvider(opts.providerName || SEARCH_PROVIDER);
   if (!provider.isConfigured()) {
     throw searchError(
       'not_configured',
@@ -104,7 +119,7 @@ async function run(mode, params, ctx = {}) {
     return { provider: provider.name, results: cached, cached: true };
   }
 
-  const results = await provider[mode]({ q, limit, bbox, near, lang });
+  const results = dedupeById(await provider[mode]({ q, limit, bbox, near, lang }));
   cache.set(cacheKey, results, mode === 'suggest' ? SUGGEST_TTL_MS : SEARCH_TTL_MS);
   return { provider: provider.name, results, cached: false };
 }

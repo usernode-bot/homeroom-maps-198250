@@ -315,3 +315,67 @@ test('placeholder adapters are unconfigured and never touch the network', async 
     );
   }
 });
+
+// ---- shared requestJson error mapping ----
+//
+// Photon stands in for every implemented adapter: the fetch/timeout/status/
+// parse mapping lives in one place (search/provider.js requestJson) and the
+// messages flow to the client unchanged.
+
+test('an upstream 429 is reported honestly as throttling', async () => {
+  const adapter = createPhoton({
+    url: 'https://photon.test',
+    fetchImpl: fetchingMock([jsonResponse({}, { ok: false, status: 429 })]),
+  });
+  await assert.rejects(
+    () => adapter.search({ q: 'x', limit: 5, bbox: null, near: null }),
+    (e) =>
+      e.code === 'provider_error' &&
+      e.message === 'The search provider is throttling requests right now.',
+  );
+});
+
+test('a timed-out request maps to the did-not-answer-in-time message', async () => {
+  const adapter = createPhoton({
+    url: 'https://photon.test',
+    fetchImpl: async () => {
+      const err = new Error('timed out');
+      err.name = 'TimeoutError';
+      throw err;
+    },
+  });
+  await assert.rejects(
+    () => adapter.suggest({ q: 'x', limit: 5, bbox: null, near: null }),
+    (e) => e.code === 'provider_error' && e.message === 'The search provider did not answer in time.',
+  );
+});
+
+test('an unreachable provider maps to the could-not-be-reached message', async () => {
+  const adapter = createPhoton({
+    url: 'https://photon.test',
+    fetchImpl: async () => {
+      throw new Error('ECONNREFUSED');
+    },
+  });
+  await assert.rejects(
+    () => adapter.search({ q: 'x', limit: 5, bbox: null, near: null }),
+    (e) => e.code === 'provider_error' && e.message === 'The search provider could not be reached.',
+  );
+});
+
+test('an unreadable body maps to the unreadable-answer message', async () => {
+  const adapter = createPhoton({
+    url: 'https://photon.test',
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new Error('invalid json');
+      },
+    }),
+  });
+  await assert.rejects(
+    () => adapter.suggest({ q: 'x', limit: 5, bbox: null, near: null }),
+    (e) => e.code === 'provider_error' && e.message === 'The search provider sent an unreadable answer.',
+  );
+});

@@ -22,7 +22,7 @@
 // its /reverse endpoint maps naturally onto a later map-phase feature.
 'use strict';
 
-const { searchError } = require('../provider');
+const { requestJson } = require('../provider');
 const { normalizeResult, detailLine, KIND_LABELS } = require('../normalize');
 
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -152,33 +152,11 @@ function createPhoton({ url, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS }
   }
 
   async function request(params, mode) {
-    let res;
-    try {
-      res = await fetchImpl(buildUrl(params, mode), {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (err) {
-      if (err && err.name === 'AbortError') {
-        throw searchError('provider_error', 'The search provider did not answer in time.');
-      }
-      if (err && err.name === 'TimeoutError') {
-        throw searchError('provider_error', 'The search provider did not answer in time.');
-      }
-      throw searchError('provider_error', 'The search provider could not be reached.');
-    }
-    if (!res.ok) {
-      throw searchError(
-        'provider_error',
-        `The search provider answered with status ${res.status}.`,
-      );
-    }
-    let body;
-    try {
-      body = await res.json();
-    } catch {
-      throw searchError('provider_error', 'The search provider sent an unreadable answer.');
-    }
+    const body = await requestJson(buildUrl(params, mode), {
+      headers: { Accept: 'application/json' },
+      timeoutMs,
+      fetchImpl,
+    });
     const features = Array.isArray(body && body.features) ? body.features : [];
     return features
       .map((f) => normalizeFeature(f, 'photon'))
