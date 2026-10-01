@@ -10,14 +10,30 @@ const {
   APP_AUDIENCE,
   PUBLIC_DIR,
   resolveMapConfig,
+  COMMUNITY_REVIEWERS,
 } = require('./config');
 const searchApi = require('./search');
+const { createPolicies } = require('./community/policies');
+const { createStore } = require('./community/store');
+const { createCommunityRouter } = require('./community/routes');
+const { parseReviewers } = require('./community/model');
+const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
 
 const app = express();
 const port = PORT;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// Community core: proposals, votes and their status history. `policies` is
+// the (deliberately empty) registry where moderation, spam, duplicate and
+// reputation systems plug in later; see community/policies.js.
+const communityPolicies = createPolicies();
+const communityStore = createStore({
+  pool,
+  policies: communityPolicies,
+  platformOrigin: PLATFORM_ORIGIN,
+});
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -119,8 +135,9 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // is a placeholder. `routing` carries the Directions equivalent: which
 // provider is connected, the travel modes it genuinely serves (the UI's
 // travel-mode selector is driven by exactly this), and its capabilities.
-// Nothing here reads dapp.json secrets, and the keyless
-// defaults read no key at all.
+// `placeProvider` is the same signal for per-place data (photos, hours,
+// contact, rating): null until a place provider adapter ships. Nothing here
+// reads dapp.json secrets, and the keyless defaults read no key at all.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   const routing = routingApi.resolveRoutingConfig();
@@ -131,11 +148,12 @@ app.get('/api/config', (_req, res) => {
     map,
     searchProvider: searchApi.activeProviderName(),
     routing,
+    placeProvider: placesApi.activeProviderName(),
     features: {
       map: Boolean(map.configured),
       search: true,
       directions: Boolean(routing.configured),
-      communityVoting: false,
+      communityVoting: true,
       ai: false,
       traffic: false,
       offline: false,
@@ -235,14 +253,68 @@ app.get('/api/directions', async (req, res) => {
   }
 });
 
-// Deferred API surface for later stages (Phase 0 shipped no map, directions
-// or community backend; /api/search and /api/directions are now real). A
-// request to any of these answers a clear, honest 501 rather than a
-// fabricated result, so no screen can mistake a stub for working
-// functionality.
-const NOT_IMPLEMENTED = [
-  '/api/places',
+app.use(
   '/api/community',
+  createCommunityRouter({ store: communityStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
+);
+
+// Places — the two read routes of the place service (places/index.js). Both
+// are GET under /api/, so the auth gate above covers them; the provider key
+// never leaves the server. The typed error codes from places/provider.js map
+// to HTTP statuses here and use the app's standard JSON error shape, so the
+// client's apiGet() turns them into typed ApiErrors for free. With no place
+// provider adapter implemented yet, every call answers an honest 501
+// (not_configured) rather than fabricated POI data.
+const PLACES_ERROR_STATUS = {
+  invalid_query: 400,
+  not_found: 404,
+  not_configured: 501,
+  rate_limited: 429,
+};
+
+async function handlePlaces(req, res, handler) {
+  try {
+    // Language resolution order, same as search: explicit query param, then
+    // the signed-in user's platform locale (JWT claim), then Accept-Language,
+    // then omit and let the provider default.
+    const lang =
+      req.query.lang ||
+      (req.user && req.user.locale) ||
+      firstAcceptLanguage(req.headers['accept-language']) ||
+      null;
+    const out = await handler({
+      lang,
+      raw: req.query,
+      user: req.user || null,
+    });
+    res.json(out);
+  } catch (err) {
+    const code = err && err.code ? err.code : 'provider_error';
+    console.warn(`[places] ${code}: ` + (err && err.message));
+    res.status(PLACES_ERROR_STATUS[code] || 502).json({
+      error: { code, message: (err && err.message) || 'The place lookup failed.' },
+    });
+  }
+}
+
+app.get('/api/places', (req, res) =>
+  handlePlaces(req, res, ({ lang, raw }) =>
+    placesApi.getPlaces({
+      q: raw.q,
+      near: raw.near,
+      radius: raw.radius,
+      bbox: raw.bbox,
+      limit: raw.limit,
+      lang,
+    })));
+app.get('/api/places/:id', (req, res) =>
+  handlePlaces(req, res, ({ lang }) => placesApi.getPlaceDetails(req.params.id, { lang })));
+
+// Deferred API surface for later stages (/api/search, /api/directions,
+// /api/community and /api/places are now real). A request to any of these
+// answers a clear, honest 501 rather than a fabricated result, so no screen
+// can mistake a stub for working functionality.
+const NOT_IMPLEMENTED = [
   '/api/saved',
 ];
 for (const prefix of NOT_IMPLEMENTED) {
@@ -317,10 +389,12 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
-  // No boot migration this stage. Phase 0 creates no tables: the community,
-  // place and map tables arrive with their features in later stages. The
+  // Idempotent boot migration: the community tables (all staging:private).
+  // Place and map tables arrive with their features in later stages. The
   // starter template's `presses` table is intentionally NOT created here (a
   // database that already has it keeps it; nothing drops it).
+  await communityStore.migrate();
+  if (IS_STAGING) await communityStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

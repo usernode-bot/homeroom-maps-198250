@@ -4,11 +4,13 @@
 import { authHeaders } from './auth.js';
 
 export class ApiError extends Error {
-  constructor(message, { status = 0, code = 'error' } = {}) {
+  constructor(message, { status = 0, code = 'error', fields = null } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    // Per-field validation messages, when the server sent them.
+    this.fields = fields;
   }
 }
 
@@ -31,27 +33,44 @@ function setPending(delta) {
   }
 }
 
-export async function apiGet(path, { signal } = {}) {
+export function apiGet(path, { signal } = {}) {
+  return request('GET', path, undefined, { signal });
+}
+
+// Writes (POST/PUT/PATCH/DELETE) with an optional JSON body. Same error
+// contract as apiGet.
+export function apiSend(method, path, body) {
+  return request(method, path, body, {});
+}
+
+async function request(method, path, body, { signal } = {}) {
   setPending(1);
   try {
+    const headers = { Accept: 'application/json', ...authHeaders() };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     const res = await fetch(path, {
-      headers: { Accept: 'application/json', ...authHeaders() },
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal,
     });
-    let body = null;
+    let payload = null;
     try {
-      body = await res.json();
+      payload = await res.json();
     } catch {
-      body = null;
+      payload = null;
     }
     if (!res.ok) {
+      const error = (payload && payload.error) || {};
       const message =
-        (body && body.error && body.error.message) ||
-        `The server could not answer that request (${res.status}).`;
-      const code = (body && body.error && body.error.code) || 'http_error';
-      throw new ApiError(message, { status: res.status, code });
+        error.message || `The server could not answer that request (${res.status}).`;
+      throw new ApiError(message, {
+        status: res.status,
+        code: error.code || 'http_error',
+        fields: error.fields || null,
+      });
     }
-    return body;
+    return payload;
   } catch (err) {
     // An aborted request is the caller's own doing (superseded by a newer
     // query), not a failure: rethrow it unchanged so the caller can ignore

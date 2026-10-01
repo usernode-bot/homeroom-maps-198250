@@ -47,6 +47,14 @@ export function hashParams() {
   return new URLSearchParams(query);
 }
 
+// Rewrite the current screen's hash query without a navigation (no
+// hashchange, so the screen is not re-rendered).
+export function replaceHashParams(params) {
+  const name = parseHash();
+  const query = new URLSearchParams(params).toString();
+  history.replaceState(null, '', hashFor(name) + (query ? '?' + query : ''));
+}
+
 export function navigate(name) {
   const hash = hashFor(name);
   if (window.location.hash === hash) {
