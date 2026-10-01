@@ -15,6 +15,12 @@
       "default": "https://photon.komoot.io"
     },
     {
+      "key": "COMMUNITY_REVIEWERS",
+      "description": "Comma-separated Homeroom usernames who may review community proposals (start review, accept, reject, mark implemented). Leave empty until reviewers are chosen; nobody can review while it is empty.",
+      "required": false,
+      "default": ""
+    },
+    {
       "key": "PLACE_PROVIDER",
       "description": "Which place-data provider adapter to use for per-place depth: photos, opening hours, phone, website, rating, business status. No adapter is implemented yet (Phase 3 ships the model, service and UI with honest Not-available states), so leaving this unset keeps /api/places answering 501 instead of serving fabricated POI data. Selection criteria, in order: (1) worldwide coverage of the place types the app surfaces, (2) per-place detail depth, (3) licensing that permits storing and displaying results, (4) cost at this app's scale, (5) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
       "required": false
@@ -93,6 +99,44 @@
       "name": "Community opens",
       "path": "/#/community",
       "expectText": "Proposals"
+    },
+    {
+      "id": "community.feed",
+      "name": "Community feed lists proposals",
+      "path": "/#/community",
+      "expectSelector": "[data-community-feed][data-feed-state=\"ready\"] [data-proposal-row]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/community.js",
+        "public/js/components/community/**",
+        "public/js/services/community*.js",
+        "community/**"
+      ]
+    },
+    {
+      "name": "Community Popular ranks open proposals by votes",
+      "path": "/#/community?view=popular",
+      "expectText": "Staging demo: ferry pier pin is too far east"
+    },
+    {
+      "name": "Community Implemented view",
+      "path": "/#/community?view=implemented",
+      "expectText": "Staging demo: show cycle paths more clearly"
+    },
+    {
+      "name": "Community Nearby asks for a location first",
+      "path": "/#/community?view=nearby",
+      "expectText": "See proposals near you"
+    },
+    {
+      "name": "Community Yours is empty for a new visitor",
+      "path": "/#/community?view=mine",
+      "expectText": "You have not proposed anything yet"
+    },
+    {
+      "name": "Community proposal detail opens with history",
+      "path": "/#/community?proposal=900004",
+      "expectSelector": "[data-proposal-detail=\"900004\"] [data-history]"
     },
     {
       "name": "Profile opens",
