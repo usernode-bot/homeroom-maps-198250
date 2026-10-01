@@ -1,8 +1,44 @@
 {
-  "description": "Imagine an app that, upon opening, instantly displays an interactive world map.",
+  "name": "Homeroom Maps",
+  "description": "A global map and location platform built together with its community.",
   "secrets": [],
   "visibility": {
     "build": "private",
     "view": "private"
-  }
+  },
+  "tests": [
+    {
+      "id": "home.shell",
+      "name": "Home shell renders",
+      "path": "/#/",
+      "expectSelector": "[data-map-container]",
+      "visual": true,
+      "impact": [
+        "public/index.html",
+        "public/js/**",
+        "styles/**",
+        "tailwind.config.js"
+      ]
+    },
+    {
+      "name": "Discover opens",
+      "path": "/#/discover",
+      "expectText": "Places and points of interest will appear here."
+    },
+    {
+      "name": "Directions opens",
+      "path": "/#/directions",
+      "expectText": "Route planning and navigation will appear here."
+    },
+    {
+      "name": "Community opens",
+      "path": "/#/community",
+      "expectText": "Proposals"
+    },
+    {
+      "name": "Profile opens",
+      "path": "/#/profile",
+      "expectText": "Appearance"
+    }
+  ]
 }

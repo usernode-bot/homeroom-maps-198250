@@ -28,6 +28,36 @@ module.exports = {
   // the usernode-native UI kit and harmless without it.
   future: { hoverOnlyWhenSupported: true },
 
-  theme: { extend: {} },
+  theme: {
+    extend: {
+      // Homeroom Maps semantic tokens (defined in styles/tailwind-input.css).
+      // Utilities like `bg-surface`, `text-muted`, `border-line` and
+      // `bg-brand` resolve through these, so a screen never hard-codes a hex
+      // and light/dark switch in one place.
+      colors: {
+        bg: 'var(--hm-bg)',
+        surface: {
+          DEFAULT: 'var(--hm-surface)',
+          raised: 'var(--hm-surface-raised)',
+        },
+        line: 'var(--hm-border)',
+        ink: 'var(--hm-text)',
+        muted: 'var(--hm-text-muted)',
+        brand: {
+          DEFAULT: 'var(--hm-brand)',
+          contrast: 'var(--hm-brand-contrast)',
+        },
+        accent: {
+          DEFAULT: 'var(--hm-accent)',
+          soft: 'var(--hm-accent-soft)',
+        },
+        danger: 'var(--hm-danger)',
+      },
+      borderRadius: {
+        card: 'var(--hm-radius-card)',
+        pill: 'var(--hm-radius-pill)',
+      },
+    },
+  },
   plugins: [],
 };
