@@ -156,11 +156,38 @@ test('normalizeRoute normalizes legs, steps and maneuvers', () => {
     ref: 'B 2',
     distance: 60,
     duration: 40,
+    exit: null,
     maneuver: { type: 'depart', modifier: null, location: [1, 2] },
   });
   // A step with no name/ref keeps them null; a maneuver with no location too.
   assert.equal(route.legs[0].steps[1].name, null);
   assert.equal(route.legs[0].steps[1].maneuver.location, null);
+});
+
+// Phase 8: navigation reads the roundabout exit number a provider supplies.
+// A step without one (or a non-positive one) keeps null, never a guess.
+test('normalizeStep carries the roundabout exit when the provider supplied one', () => {
+  const route = normalizeRoute(
+    {
+      geometry: [[1, 2]],
+      legs: [
+        {
+          steps: [
+            { name: 'R1', maneuver: { type: 'roundabout', modifier: null, location: [1, 2] }, exit: 2 },
+            { name: 'R2', maneuver: { type: 'roundabout', modifier: null, location: [1, 2] } },
+            { name: 'R3', maneuver: { type: 'roundabout', modifier: null, location: [1, 2] }, exit: 0 },
+            { name: 'R4', maneuver: { type: 'roundabout', modifier: null, location: [1, 2] }, exit: 'two' },
+          ],
+        },
+      ],
+    },
+    'stub',
+  );
+  const steps = route.legs[0].steps;
+  assert.equal(steps[0].exit, 2);
+  assert.equal(steps[1].exit, null);
+  assert.equal(steps[2].exit, null);
+  assert.equal(steps[3].exit, null);
 });
 
 test('roadNamesOf collapses consecutive repeats and keeps order', () => {

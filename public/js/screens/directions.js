@@ -13,18 +13,20 @@
 // ever fabricated: every distance, duration, road name and route line comes
 // from the provider's response, and a missing value reads "unavailable".
 //
-// Turn-by-turn navigation is a later phase; the placeholder panel at the
-// bottom says so plainly.
+// Turn-by-turn navigation (Phase 8) reuses everything this screen already
+// owns: the calculated RouteResult goes into the navigation session unchanged,
+// the same map instance draws guidance, and the planning form steps aside
+// while a session is live.
 import { el } from '../components/dom.js';
 import { button } from '../components/button.js';
 import { errorState } from '../components/error-state.js';
-import { placeholderPanel } from '../components/placeholder-panel.js';
 import { t } from '../i18n/index.js';
 import { spinner } from '../components/loading.js';
 import { icon } from '../components/icons.js';
 import { createLocationField } from '../components/directions/location-field.js';
 import { modeSelector } from '../components/directions/mode-selector.js';
 import { routeSummary } from '../components/route-summary.js';
+import { createNavigationView } from '../components/navigation/view.js';
 import { getState } from '../state.js';
 import { hashParams } from '../router.js';
 import { capabilitiesFromConfig, createDirectionsSession } from '../services/routing.js';
@@ -35,6 +37,7 @@ import {
   ROUTE_ERROR_COPY,
 } from '../services/routing-core.js';
 import { getCurrentLocation, LocationError } from '../services/location.js';
+import { createNavigation, NAV_STATE } from '../services/navigation.js';
 import { createMapService } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
@@ -45,6 +48,11 @@ const DEFAULT_ATTRIBUTION = 'OpenStreetMap';
 // of this screen, so a navigation never leaves a WebGL context behind (the
 // same pattern the Home screen uses).
 let activeService = null;
+
+// The live navigation session, with its view and listeners. Ended on the next
+// render of this screen: leaving the Directions screen always stops guidance,
+// its location watch and its voice.
+let activeNavigation = null;
 
 const ERROR_TITLES = {
   missing_origin: 'Route not ready',
@@ -59,6 +67,14 @@ const ERROR_TITLES = {
 };
 
 export async function render(ctx) {
+  if (activeNavigation) {
+    const nav = activeNavigation;
+    activeNavigation = null;
+    window.removeEventListener('usernode:visibility-changed', nav.onVisibility);
+    if (nav.unsubIdle) nav.unsubIdle();
+    nav.view.destroy();
+    nav.session.end();
+  }
   if (activeService) {
     activeService.destroy();
     activeService = null;
@@ -78,10 +94,6 @@ export async function render(ctx) {
         title: 'Routing is not configured yet',
         description:
           'No routing provider is connected. Set ROUTING_PROVIDER on the server to turn directions on.',
-      }),
-      placeholderPanel({
-        title: 'Turn-by-turn navigation',
-        description: 'Live guidance, voice instructions and rerouting are coming in a later phase.',
       }),
     );
     return;
@@ -167,22 +179,92 @@ export async function render(ctx) {
   let lastWaypointCount = -1;
   let waypointFields = []; // field refs for the session's waypoint rows
   let pendingWaypoint = null; // { field, row } — an "Add waypoint" row awaiting a pick
+  let autoNavPending = false; // a `?navigate=1` link waiting for its route
 
   function sync(state) {
+    // A live navigation session owns the screen: the view renders from the
+    // navigation snapshots, and the planning layout stands by hidden.
+    if (activeNavigation) return;
     originField.setPoint(state.origin);
     destinationField.setPoint(state.destination);
     syncWaypoints(state);
     syncMode(state);
     renderResults(state);
     routeMap.update(state);
+    if (session.phase() === 'routes' && navControlsHost.childElementCount) {
+      navControlsHost.replaceChildren();
+    }
 
     calculateButton.disabled = state.pending;
+    if (autoNavPending) {
+      const phase = session.phase();
+      if (phase === 'routes') {
+        autoNavPending = false;
+        enterNavigation(state.routes[state.selectedRoute], state);
+      } else if (phase === 'error') {
+        autoNavPending = false;
+      }
+    }
   }
   session.subscribe(sync);
 
+  // ── navigation lifecycle ─────────────────────────────────────────────────
+
+  // Guidance reuses this screen's own map instance: the view mounts its
+  // overlay inside the map frame and updates the same service the planning
+  // map used. The session is created fresh here and bound to the real
+  // fetcher and location watch by services/navigation.js.
+  function enterNavigation(route, state) {
+    if (activeNavigation || !route || !state || !state.destination) return;
+    const { session: navSession, voice } = createNavigation();
+    const ok = navSession.start(route, {
+      destination: { lat: state.destination.lat, lon: state.destination.lon },
+      waypoints: (state.waypoints || []).map((w) => ({ lat: w.lat, lon: w.lon })),
+      mode: state.mode,
+      waypointsSupported: session.waypointsSupported(),
+    });
+    if (!ok) {
+      // An invalid route can never be guided; the session reset itself and
+      // the planning screen stays as it was.
+      navSession.end();
+      return;
+    }
+    const view = createNavigationView({ session: navSession, voice, routeMap });
+    const onVisibility = (event) => {
+      navSession.setVisible(!event.detail || event.detail.hidden !== true);
+    };
+    const unsubIdle = navSession.subscribe((snap) => {
+      // session.end() (the End button, or teardown) lands back in idle: put
+      // the planning screen back.
+      if (snap && snap.state === NAV_STATE.IDLE && activeNavigation === nav) {
+        teardownNavigation(false);
+      }
+    });
+    const nav = { session: navSession, view, onVisibility, unsubIdle };
+    activeNavigation = nav;
+
+    planningHost.style.display = 'none';
+    navControlsHost.replaceChildren();
+    view.subscribe();
+    window.addEventListener('usernode:visibility-changed', onVisibility);
+  }
+
+  function teardownNavigation(endSession) {
+    const nav = activeNavigation;
+    if (!nav) return;
+    activeNavigation = null;
+    window.removeEventListener('usernode:visibility-changed', nav.onVisibility);
+    if (nav.unsubIdle) nav.unsubIdle();
+    nav.view.destroy();
+    if (endSession) nav.session.end();
+    planningHost.style.display = '';
+    navControlsHost.replaceChildren();
+    sync(session.getState());
+    routeMap.refresh();
+  }
+
   // ── static layout ────────────────────────────────────────────────────────
-  ctx.content.replaceChildren(
-    el('h1', { class: 'text-xl font-semibold tracking-tight text-ink', text: t('nav.directions') }),
+  const planningHost = el('div', { class: 'flex flex-col gap-4', dataset: { directionsPlanning: 'true' } }, [
     el('div', { class: 'flex flex-col gap-4', dataset: { directionsForm: 'true' } }, [
       modeHost,
       originField.root,
@@ -200,22 +282,48 @@ export async function render(ctx) {
       ]),
     ]),
     resultsSlot,
+  ]);
+  // Deep-link notes ("Navigation needs a route") and any navigation-mode
+  // messaging that is not part of the live banner.
+  const navControlsHost = el('div', {
+    class: 'flex flex-col gap-3',
+    dataset: { navigationControlsHost: 'true' },
+  });
+
+  ctx.content.replaceChildren(
+    el('h1', { class: 'text-xl font-semibold tracking-tight text-ink', text: t('nav.directions') }),
+    planningHost,
     routeMap.root,
-    placeholderPanel({
-      title: t('directions.panelTitle'),
-      description: t('directions.panelBody'),
-      badge: 'Later phase',
-    }),
+    navControlsHost,
   );
 
   // ── Place integration adapter (PLACEHOLDER place-phase) ──────────────────
   // A Place Detail screen (Phase 3, not merged on this branch yet) hands a
   // place over by opening Directions with `?to=<encoded name>,<lat>,<lon>`.
   // The destination is pre-filled from the real place; nothing is looked up
-  // or invented here.
-  const prefill = parseDestinationParam();
+  // or invented here. `?from=` pre-fills the origin the same way, and
+  // `?navigate=1` asks for navigation as soon as a route exists.
+  const prefill = parsePointParam('to');
   if (prefill) {
     session.setDestination(prefill);
+  }
+  const originLink = parsePointParam('from');
+  if (originLink) {
+    session.setOrigin(originLink);
+  }
+  if (hashParams().get('navigate') === '1') {
+    const state = session.getState();
+    if (state.origin && state.destination) {
+      autoNavPending = true;
+      session.calculate();
+    } else {
+      navControlsHost.replaceChildren(
+        errorState({
+          title: t('navigation.needsRoute'),
+          description: t('navigation.needsRouteBody'),
+        }),
+      );
+    }
   } else {
     sync(session.getState());
   }
@@ -411,6 +519,16 @@ export async function render(ctx) {
       } else {
         children.push(routeSummary({ route: selected, modeLabel: session.modeLabel() }));
       }
+      // One Start control for the whole result set, below the cards: the
+      // alternative cards are radio buttons, and a button inside one would
+      // nest interactive elements. Navigation always follows the selected
+      // route as the provider returned it.
+      const startNav = button(t('navigation.start'), {
+        attrs: { dataset: { startNavigation: 'true' } },
+        class: 'w-full py-3 text-base',
+      });
+      startNav.addEventListener('click', () => enterNavigation(selected, state));
+      children.push(startNav);
       resultsSlot.replaceChildren(...children);
       return;
     }
@@ -461,23 +579,25 @@ export async function render(ctx) {
 }
 
 // ── Place → Directions hand-off ────────────────────────────────────────────
-// Reads `?to=<encodeURIComponent(name)>,<lat>,<lon>` from the fragment query
-// (`/#/directions?to=...`, decoded by the router's hashParams). Splitting on
-// the last two commas keeps place names with commas intact when the whole
-// value was URL-encoded. Returns a validated location point, or null for
-// anything malformed — a malformed link pre-fills nothing rather than a guess.
+// Reads `?<name>=<encodeURIComponent(place name)>,<lat>,<lon>` from the
+// fragment query (`/#/directions?to=...`, decoded by the router's hashParams).
+// `to` pre-fills the destination (the Place hand-off), `from` the origin.
+// Splitting on the last two commas keeps place names with commas intact when
+// the whole value was URL-encoded. Returns a validated location point, or
+// null for anything malformed — a malformed link pre-fills nothing rather
+// than a guess.
 
-function parseDestinationParam() {
+function parsePointParam(name) {
   try {
-    const raw = hashParams().get('to');
+    const raw = hashParams().get(name);
     if (!raw) return null;
     const last = raw.lastIndexOf(',');
     const prev = raw.lastIndexOf(',', last - 1);
     if (last < 0 || prev < 0) return null;
-    const name = raw.slice(0, prev).trim();
+    const placeName = raw.slice(0, prev).trim();
     const lat = Number(raw.slice(prev + 1, last));
     const lon = Number(raw.slice(last + 1));
-    return toLocationPoint({ id: 'link', name, lat, lon });
+    return toLocationPoint({ id: 'link-' + name, name: placeName, lat, lon });
   } catch {
     return null;
   }
@@ -524,6 +644,7 @@ function createRouteMap(mapConfig, getLatestState) {
   let service = null;
   let ready = false;
   let lastApplied = null; // identity key of the last routes+selection applied
+  let navOverlayNode = null; // the navigation view's overlay, while one is live
 
   function mount() {
     if (activeService) {
@@ -631,6 +752,30 @@ function createRouteMap(mapConfig, getLatestState) {
     // carries no `phase` (it is derived in the core, not stored), and the map
     // key depends on it.
     update() {
+      apply(getLatestState());
+    },
+    // Navigation (Phase 8) mounts its overlay inside this same frame and
+    // drives the same service directly, so guidance shares the one WebGL
+    // context instead of building a second map.
+    mountOverlay(node) {
+      navOverlayNode = node;
+      container.appendChild(node);
+    },
+    clearOverlay() {
+      if (navOverlayNode && navOverlayNode.parentNode === container) {
+        navOverlayNode.remove();
+      }
+      navOverlayNode = null;
+    },
+    // Run one operation against the live service now (throttling is the
+    // navigation view's job). No-op before the map is ready.
+    apply(fn) {
+      if (ready && service && typeof fn === 'function') fn(service);
+    },
+    // Re-run the standard planning apply from scratch: after a navigation
+    // session trimmed the drawn line, this restores the full selected route.
+    refresh() {
+      lastApplied = null;
       apply(getLatestState());
     },
     destroy() {

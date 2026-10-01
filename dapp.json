@@ -134,6 +134,26 @@
       "expectText": "Berlin"
     },
     {
+      "id": "directions.navigationLink",
+      "name": "Navigation deep link asks for a route first",
+      "path": "/#/directions?navigate=1",
+      "expectText": "Navigation needs a route",
+      "visual": true,
+      "impact": [
+        "public/js/screens/directions.js",
+        "public/js/components/navigation/**",
+        "public/js/services/navigation.js",
+        "public/js/services/navigation/**",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js"
+      ]
+    },
+    {
+      "name": "Navigation deep link copy in Indonesian",
+      "path": "/#/directions?navigate=1&lang=id",
+      "expectText": "Navigasi butuh rute"
+    },
+    {
       "name": "Community opens",
       "path": "/#/community",
       "expectText": "Proposals"

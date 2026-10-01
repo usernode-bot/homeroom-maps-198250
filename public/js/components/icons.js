@@ -31,6 +31,22 @@ const PATHS = {
   photo:
     '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-4-4-7 7"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+  // Turn-by-turn maneuver icons (Phase 8). Same 24-grid stroke artwork;
+  // direction-agnostic shapes for merge/ramp/fork/roundabout — the side is
+  // carried by the instruction text.
+  straight: '<path d="M12 20V4"/><path d="m6 10 6-6 6 6"/>',
+  'turn-left': '<path d="M19 20V8a2 2 0 0 0-2-2H5"/><path d="m9 2-4 4 4 4"/>',
+  'turn-right': '<path d="M5 20V8a2 2 0 0 1 2-2h12"/><path d="m15 2 4 4-4 4"/>',
+  'slight-left': '<path d="M17 20 8 11"/><path d="M8 17v-6h6"/>',
+  'slight-right': '<path d="m7 20 9-9"/><path d="M16 17v-6h-6"/>',
+  'sharp-left': '<path d="M17 20v-7a3 3 0 0 0-3-3H6"/><path d="m10 6-4 4 4 4"/>',
+  'sharp-right': '<path d="M7 20v-7a3 3 0 0 1 3-3h8"/><path d="m14 6 4 4-4 4"/>',
+  uturn: '<path d="M17 20V8a4 4 0 0 0-8 0v12"/><path d="m5 16 4 4 4-4"/>',
+  roundabout:
+    '<circle cx="11" cy="9" r="3.5"/><path d="M11 21v-5"/><path d="M14.5 9H21"/><path d="m18 6 3 3-3 3"/>',
+  merge: '<path d="M8 7 12 3l4 4"/><path d="M12 3v18"/>',
+  fork: '<path d="M12 21v-5"/><path d="m12 16-5-7"/><path d="m12 16 5-7"/>',
+  ramp: '<path d="M4 21C11 21 18 16 18 7"/><path d="m14 4 4 3-4 3"/>',
 };
 
 export function icon(name, { class: extra = 'h-5 w-5' } = {}) {
