@@ -32,10 +32,17 @@ export async function render(ctx) {
   const mapConfig = (getState().config && getState().config.map) || null;
   const force = demoState();
 
-  // The frame keeps one height across every state, so switching between them
-  // never collapses or jumps the page.
+  // The frame keeps ONE definite height across every state, so switching
+  // between them never collapses or jumps the page and the renderer always has
+  // a real box to size its canvas to. It is a definite height (not min-height)
+  // on purpose: the renderer's own `.maplibregl-map` rule forces
+  // `position: relative` on the surface below, so the surface sits in normal
+  // flow and a percentage height only resolves against a definite parent.
+  // With `min-height` the surface (and MapLibre's own `overflow: hidden` box)
+  // resolves to zero height and clips the canvas away, which is exactly the
+  // "container and controls render but no tiles" failure.
   const container = el('div', {
-    class: 'relative min-h-[60vh] overflow-hidden rounded-card border border-line bg-surface-raised',
+    class: 'relative h-[60vh] overflow-hidden rounded-card border border-line bg-surface-raised',
     dataset: { mapContainer: 'live' },
   });
   // `surface` is the map region: it carries the descriptive label and the
@@ -45,8 +52,16 @@ export async function render(ctx) {
   // siblings in `overlay`, so they remain readable to a screen reader rather
   // than being swallowed by `role="img"`. `overlay` is hidden once the map is
   // live.
+  //
+  // It fills the frame with `h-full w-full` rather than `absolute inset-0` on
+  // purpose: MapLibre's own stylesheet re-positions whatever element it is
+  // handed as `position: relative` and clips it with `overflow: hidden`, so
+  // the absolute variant would win the position but still resolve to zero
+  // height and clip the canvas to nothing. Filling the definite parent works
+  // whether the renderer keeps it relative or an adapter positions it
+  // absolutely, so it stays correct across renderers.
   const surface = el('div', {
-    class: 'absolute inset-0',
+    class: 'h-full w-full',
     dataset: { mapCanvas: 'true' },
     role: 'img',
     'aria-label': 'Interactive world map',
