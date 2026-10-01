@@ -3,8 +3,9 @@
 // never shows a blank page or a raw stack.
 import { el } from './dom.js';
 import { button } from './button.js';
+import { t } from '../i18n/index.js';
 
-export function errorState({ title = 'Something went wrong', description, onRetry } = {}) {
+export function errorState({ title = t('error.somethingWentWrong'), description, onRetry } = {}) {
   return el(
     'div',
     {
@@ -17,7 +18,7 @@ export function errorState({ title = 'Something went wrong', description, onRetr
       description
         ? el('p', { class: 'max-w-sm text-sm text-muted leading-relaxed', text: description })
         : null,
-      onRetry ? button('Try again', { variant: 'secondary', onClick: onRetry }) : null,
+      onRetry ? button(t('common.tryAgain'), { variant: 'secondary', onClick: onRetry }) : null,
     ],
   );
 }

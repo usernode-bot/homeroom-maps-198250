@@ -13,7 +13,7 @@
 
 const { SEARCH_PROVIDER, PHOTON_URL, PELIAS_URL, PELIAS_API_KEY } = require('../config');
 const { register, getProvider, searchError } = require('./provider');
-const { validateQuery, parseBbox, parseNear, parseLimit } = require('./normalize');
+const { validateQuery, parseBbox, parseNear, parseLimit, localizeDetailLine } = require('./normalize');
 const { TokenBucket } = require('./rate-limit');
 const { SearchCache } = require('./cache');
 const { createPhoton } = require('./providers/photon');
@@ -73,6 +73,17 @@ function dedupeById(results) {
   });
 }
 
+// Phase 9: rewrite the leading kind label of each detail line into the
+// request's language (only Indonesian has a table; everything else passes
+// through unchanged). Applied AFTER the canonical results are cached, so the
+// cache stays language-neutral and any language gets its own labels.
+function withKindLabels(results, lang) {
+  if (!lang) return results;
+  return results.map((r) =>
+    r && r.detail && r.kind ? { ...r, detail: localizeDetailLine(r.detail, r.kind, lang) } : r,
+  );
+}
+
 // The single pipeline. `params` are the RAW HTTP query values; `ctx` carries
 // the resolved language preference from the request (see server.js). `opts`
 // exists for tests only: `providerName` overrides the configured provider so a
@@ -116,12 +127,12 @@ async function run(mode, params, ctx = {}, opts = {}) {
   ].join('|');
   const cached = cache.get(cacheKey);
   if (cached) {
-    return { provider: provider.name, results: cached, cached: true };
+    return { provider: provider.name, results: withKindLabels(cached, lang), cached: true };
   }
 
-  const results = dedupeById(await provider[mode]({ q, limit, bbox, near, lang }));
-  cache.set(cacheKey, results, mode === 'suggest' ? SUGGEST_TTL_MS : SEARCH_TTL_MS);
-  return { provider: provider.name, results, cached: false };
+  const raw = dedupeById(await provider[mode]({ q, limit, bbox, near, lang }));
+  cache.set(cacheKey, raw, mode === 'suggest' ? SUGGEST_TTL_MS : SEARCH_TTL_MS);
+  return { provider: provider.name, results: withKindLabels(raw, lang), cached: false };
 }
 
 module.exports = { run, activeProviderName };

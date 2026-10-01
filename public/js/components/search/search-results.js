@@ -16,6 +16,8 @@ import { card } from '../card.js';
 import { emptyState } from '../empty-state.js';
 import { errorState } from '../error-state.js';
 import { spinner } from '../loading.js';
+import { t } from '../../i18n/index.js';
+import { formatAddress } from '../../i18n/address.js';
 
 // Providers whose data carries the ODbL attribution obligation. The line is
 // wired to the result's provider field so a commercial adapter switch (which
@@ -66,7 +68,7 @@ function recentsView(state, { onRepeat, onClearRecents, onClose }) {
   if (state.recents.length) {
     children.push(
       el('div', { class: 'flex items-center justify-between px-4 pb-1 pt-3' }, [
-        el('p', { class: 'text-xs font-medium uppercase tracking-wide text-muted', text: 'Recent searches' }),
+        el('p', { class: 'text-xs font-medium uppercase tracking-wide text-muted', text: t('search.recentTitle') }),
         el(
           'button',
           {
@@ -74,7 +76,7 @@ function recentsView(state, { onRepeat, onClearRecents, onClose }) {
             class: 'text-xs font-medium text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded',
             dataset: { searchClearRecents: 'true' },
           },
-          ['Clear'],
+          [t('search.clear')],
         ),
       ]),
     );
@@ -93,7 +95,7 @@ function recentsView(state, { onRepeat, onClearRecents, onClose }) {
     children.push(
       el('p', {
         class: 'px-4 py-5 text-sm text-muted leading-relaxed',
-        text: 'Search countries, cities, streets and places worldwide.',
+        text: t('search.idleHint'),
       }),
     );
   }
@@ -109,14 +111,14 @@ function recentsView(state, { onRepeat, onClearRecents, onClose }) {
 function loadingView() {
   return el('div', { class: 'flex items-center gap-3 px-4 py-5' }, [
     spinner(),
-    el('p', { class: 'text-sm text-muted', text: 'Searching…' }),
+    el('p', { class: 'text-sm text-muted', text: t('search.searching') }),
   ]);
 }
 
 function resultsView(state, { onSelect }) {
   const listbox = el(
     'div',
-    { id: 'hm-search-listbox', role: 'listbox', 'aria-label': 'Suggestions' },
+    { id: 'hm-search-listbox', role: 'listbox', 'aria-label': t('search.listboxLabel') },
     state.results.map((result, i) =>
       resultRow({
         optionId: `hm-search-opt-${i}`,
@@ -132,7 +134,7 @@ function resultsView(state, { onSelect }) {
     OSM_PROVIDERS.has(state.results[0] && state.results[0].provider)
       ? el('p', {
           class: 'px-4 pb-2.5 pt-1 text-[11px] text-muted',
-          text: 'Search data © OpenStreetMap contributors',
+          text: t('search.osmLine'),
         })
       : null,
   ]);
@@ -143,8 +145,8 @@ function noResultsView(state) {
   // spinner and the error alert already do.
   return el('div', { role: 'status' }, [
     emptyState({
-      title: 'No results',
-      description: `No matches for "${state.query.trim()}". Check the spelling or try a different name.`,
+      title: t('search.noResultsTitle'),
+      description: t('search.noResults', { query: state.query.trim() }),
     }),
   ]);
 }
@@ -155,10 +157,10 @@ function errorView(state, { onRetry }) {
   const rateLimited = state.error && state.error.code === 'rate_limited';
   return el('div', {}, [
     errorState({
-      title: rateLimited ? 'Search is busy right now' : 'Search is unavailable right now',
+      title: rateLimited ? t('search.errorBusy') : t('search.errorUnavailable'),
       description:
         (state.error && state.error.message) ||
-        'We could not reach the search service. Try again in a moment.',
+        t('search.errorFallback'),
       onRetry,
     }),
   ]);
@@ -205,26 +207,34 @@ export function createSearchPanel({ session }) {
 // a map, and "Remove" clears it.
 export function selectedPlaceCard({ place, onRemove }) {
   const coords = `${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`;
+  // Address line: composed from the structured parts in the country's
+  // ordering convention (i18n/address.js) when they exist, else exactly the
+  // provider's preformatted line, as before. Coordinates stay dot-decimal:
+  // that is the notation people paste into other map tools.
+  const composedLine = formatAddress(place.address, {
+    countryCode: place.address && place.address.countryCode,
+  });
+  const line = composedLine || place.addressLine || null;
   const cardEl = card(
     [
       el('div', { class: 'flex items-start justify-between gap-3' }, [
-        el('p', { class: 'text-xs font-medium uppercase tracking-wide text-muted', text: 'Selected place' }),
+        el('p', { class: 'text-xs font-medium uppercase tracking-wide text-muted', text: t('place.selected') }),
         el(
           'button',
           {
             type: 'button',
             class: 'shrink-0 text-sm font-medium text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded',
             dataset: { searchRemoveSelected: 'true' },
-            'aria-label': 'Remove',
+            'aria-label': t('place.remove'),
           },
-          ['Remove'],
+          [t('place.remove')],
         ),
       ]),
       el('p', { class: 'mt-1 text-lg font-semibold text-ink', text: place.name }),
       place.localName ? el('p', { class: 'text-sm text-muted', text: place.localName }) : null,
       el('p', { class: 'mt-0.5 text-sm text-muted', text: place.detail || '' }),
-      place.addressLine && place.addressLine !== place.detail
-        ? el('p', { class: 'text-sm text-ink', text: place.addressLine })
+      line && line !== place.detail
+        ? el('p', { class: 'text-sm text-ink', text: line })
         : null,
       el('p', { class: 'mt-1 text-xs text-muted', text: coords }),
     ].filter(Boolean),

@@ -177,6 +177,26 @@
       "expectSelector": "[data-proposal-detail=\"900004\"] [data-history]"
     },
     {
+      "name": "Language picker renders on Profile",
+      "path": "/#/profile",
+      "expectText": "Language"
+    },
+    {
+      "name": "Units picker renders on Profile",
+      "path": "/#/profile",
+      "expectText": "Units"
+    },
+    {
+      "name": "Indonesian strings apply via the language override",
+      "path": "/#/?lang=id",
+      "expectText": "Tempat"
+    },
+    {
+      "name": "Indonesian map copy via language override",
+      "path": "/#/?map=unconfigured&lang=id",
+      "expectText": "Peta belum dikonfigurasi"
+    },
+    {
       "name": "Profile opens",
       "path": "/#/profile",
       "expectText": "Appearance"

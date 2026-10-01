@@ -7,6 +7,7 @@
 // control that does nothing.
 import { el } from '../components/dom.js';
 import { mapIcon } from './icons.js';
+import { t } from '../i18n/index.js';
 
 const BUTTON_CLASS =
   'un-touch-target flex h-11 w-11 items-center justify-center rounded-pill border border-line bg-surface text-ink shadow-sm transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-60';
@@ -30,13 +31,13 @@ function iconButton({ icon, label, onClick }) {
 // caller through the callbacks so this stays a pure view.
 export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, onMyLocation, myLocationOn }) {
   const nodes = [
-    buttonWithHandler(iconButton({ icon: 'plus', label: 'Zoom in' }), onZoomIn),
-    buttonWithHandler(iconButton({ icon: 'minus', label: 'Zoom out' }), onZoomOut),
+    buttonWithHandler(iconButton({ icon: 'plus', label: t('map.zoomIn') }), onZoomIn),
+    buttonWithHandler(iconButton({ icon: 'minus', label: t('map.zoomOut') }), onZoomOut),
   ];
   if (capabilities.rotation) {
     nodes.push(
       buttonWithHandler(
-        iconButton({ icon: 'compass', label: 'Reset north' }),
+        iconButton({ icon: 'compass', label: t('map.resetNorth') }),
         onResetNorth,
       ),
     );
@@ -48,11 +49,11 @@ export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, o
         type: 'button',
         class:
           'un-touch-target flex h-11 items-center gap-1.5 rounded-pill border border-line bg-surface px-3 text-xs font-medium text-ink shadow-sm transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-        'aria-label': 'My location',
+        'aria-label': t('map.myLocation'),
         'aria-pressed': myLocationOn ? 'true' : 'false',
         dataset: { mapControl: 'locate' },
       },
-      [mapIcon('locate', { class: 'h-5 w-5' }), el('span', { text: 'My location' })],
+      [mapIcon('locate', { class: 'h-5 w-5' }), el('span', { text: t('map.myLocation') })],
     ),
   );
   // Map layers is deliberately disabled and labelled: it is a placeholder for
@@ -64,11 +65,11 @@ export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, o
         type: 'button',
         disabled: true,
         class: BUTTON_CLASS,
-        'aria-label': 'Map layers (coming soon)',
-        title: 'Coming soon',
+        'aria-label': t('map.layersSr'),
+        title: t('common.comingSoon'),
         dataset: { mapControl: 'layers' },
       },
-      [mapIcon('layers'), el('span', { class: 'sr-only', text: 'Map layers, coming soon' })],
+      [mapIcon('layers'), el('span', { class: 'sr-only', text: t('map.layersSr') })],
     ),
   );
 

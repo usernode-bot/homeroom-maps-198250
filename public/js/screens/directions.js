@@ -19,6 +19,7 @@ import { el } from '../components/dom.js';
 import { button } from '../components/button.js';
 import { errorState } from '../components/error-state.js';
 import { placeholderPanel } from '../components/placeholder-panel.js';
+import { t } from '../i18n/index.js';
 import { spinner } from '../components/loading.js';
 import { icon } from '../components/icons.js';
 import { createLocationField } from '../components/directions/location-field.js';
@@ -181,7 +182,7 @@ export async function render(ctx) {
 
   // ── static layout ────────────────────────────────────────────────────────
   ctx.content.replaceChildren(
-    el('h1', { class: 'text-xl font-semibold tracking-tight text-ink', text: 'Directions' }),
+    el('h1', { class: 'text-xl font-semibold tracking-tight text-ink', text: t('nav.directions') }),
     el('div', { class: 'flex flex-col gap-4', dataset: { directionsForm: 'true' } }, [
       modeHost,
       originField.root,
@@ -201,8 +202,8 @@ export async function render(ctx) {
     resultsSlot,
     routeMap.root,
     placeholderPanel({
-      title: 'Turn-by-turn navigation',
-      description: 'Live guidance, voice instructions and rerouting are coming in a later phase.',
+      title: t('directions.panelTitle'),
+      description: t('directions.panelBody'),
       badge: 'Later phase',
     }),
   );

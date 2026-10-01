@@ -10,6 +10,7 @@ import { fetchConfig, fetchMe, onPendingChange } from './api.js';
 import { hasToken } from './auth.js';
 import * as router from './router.js';
 import * as theme from './theme.js';
+import * as i18n from './i18n/index.js';
 import * as home from './screens/home.js';
 import * as discover from './screens/discover.js';
 import * as directions from './screens/directions.js';
@@ -33,10 +34,10 @@ function showError(err) {
   if (!content) return;
   content.replaceChildren(
     errorState({
-      title: 'This screen could not open',
+      title: i18n.t('error.screenTitle'),
       description:
         (err && err.message) ||
-        'Something went wrong while opening this screen.',
+        i18n.t('error.screenBody'),
       onRetry: () => renderScreen(currentName, true),
     }),
   );
@@ -52,7 +53,11 @@ async function loadMeta() {
     // expected to fail is noise, not a real error.
     if (!getState().user && hasToken()) {
       try {
-        setState({ user: await fetchMe() });
+        const me = await fetchMe();
+        setState({ user: me });
+        // The platform's own locale claim: the i18n layer follows it only
+        // when the user has no in-app language override.
+        i18n.notePlatformLocale(me.locale);
       } catch {
         /* the shell still works without the header name */
       }
@@ -95,9 +100,16 @@ async function renderScreen(name, force = false) {
   }
 }
 
-function boot() {
+async function boot() {
   theme.initTheme();
-  root.replaceChildren(loading({ label: 'Starting Homeroom Maps' }));
+  // i18n first: the initial locale is applied (html lang/dir, bundles) before
+  // the first render so no screen paints in the wrong language. The English
+  // bundle is static, so this adds no network round-trip on first paint.
+  await i18n.init();
+  // A language switch re-renders the current screen in place, the same way a
+  // navigation does — no reload.
+  i18n.onChange(() => renderScreen(currentName, true));
+  root.replaceChildren(loading({ label: i18n.t('app.starting') }));
   router.start((name) => renderScreen(name, true));
 }
 
