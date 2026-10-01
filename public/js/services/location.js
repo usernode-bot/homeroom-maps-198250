@@ -167,3 +167,100 @@ export async function locateOnce() {
     );
   });
 }
+
+// ── continuous tracking (Phase 8 navigation) ───────────────────────────────
+//
+// The same permission flow and the same error vocabulary as the one-shot
+// functions above, extended with the continuous `watchPosition` API the
+// navigation session needs. This is the one Location architecture extended,
+// not a second one: navigation never talks to `navigator.geolocation`
+// directly.
+//
+// startLocationWatch(onFix, onError) returns `{ stop() }` immediately
+// (stopping cancels a request that has not finished asking, too). Fixes carry
+// { lat, lng, accuracy, heading, speed, timestamp }; heading and speed are
+// null when the device does not report them. Errors reject-free: onError
+// receives a typed LocationError, so a decline is distinguishable from a slow
+// fix exactly as in getCurrentLocation().
+
+function watchGeolocationError(err) {
+  const denied = err && err.code === err.PERMISSION_DENIED;
+  const documentHolds =
+    typeof window !== 'undefined' &&
+    window.usernode &&
+    typeof window.usernode.hasCapability === 'function' &&
+    window.usernode.hasCapability('geolocation');
+  if (denied && documentHolds) return new LocationError('denied');
+  // An undelegated capability fails with PERMISSION_DENIED within milliseconds
+  // and looks identical to a refusal; `unavailable` is the honest label for it.
+  if (denied) return new LocationError('unavailable');
+  if (err && err.code === err.TIMEOUT) return new LocationError('timeout');
+  return new LocationError('unavailable');
+}
+
+export function startLocationWatch(onFix, onError) {
+  let stopped = false;
+  let watchId = null;
+
+  async function begin() {
+    const usernode = typeof window !== 'undefined' ? window.usernode : null;
+    if (!usernode || typeof usernode.requestPermission !== 'function') {
+      onError(new LocationError('no_shell'));
+      return;
+    }
+    let result;
+    try {
+      result = await usernode.requestPermission('geolocation');
+    } catch {
+      onError(new LocationError('ask_failed'));
+      return;
+    }
+    if (stopped) return;
+    if (!result || result.state !== 'granted') {
+      onError(new LocationError(result && result.reason === 'declined' ? 'declined' : 'not_declared'));
+      return;
+    }
+    if (result.active === false) {
+      // Granted, and the shell is about to reload this frame to apply the
+      // policy. Stop: calling the geolocation API now would fail anyway.
+      onError(new LocationError('reopening'));
+      return;
+    }
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      onError(new LocationError('no_geolocation'));
+      return;
+    }
+    if (stopped) return;
+    watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (stopped) return;
+        const coords = position.coords || {};
+        onFix({
+          lat: coords.latitude,
+          lng: coords.longitude,
+          accuracy: coords.accuracy,
+          heading: coords.heading,
+          speed: coords.speed,
+          timestamp: position.timestamp,
+        });
+      },
+      (err) => {
+        if (stopped) return;
+        onError(watchGeolocationError(err));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 2000 },
+    );
+  }
+
+  begin();
+
+  return {
+    stop() {
+      stopped = true;
+      if (watchId != null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      watchId = null;
+    },
+  };
+}

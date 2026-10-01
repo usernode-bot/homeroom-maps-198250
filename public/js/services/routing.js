@@ -31,6 +31,12 @@ export function capabilitiesFromConfig(config) {
     modes: Array.isArray(routing.modes) ? routing.modes : [],
     alternatives: Boolean(routing.capabilities && routing.capabilities.alternatives),
     waypoints: Boolean(routing.capabilities && routing.capabilities.waypoints),
+    // Surfaced for navigation (Phase 8): whether the provider supplies turn
+    // steps, and whether durations are traffic-aware. `steps` false means the
+    // maneuver banner honestly reads "Instructions unavailable"; `traffic`
+    // false means durations are never labelled as live.
+    steps: Boolean(routing.capabilities && routing.capabilities.steps),
+    traffic: Boolean(routing.capabilities && routing.capabilities.traffic),
     attribution: routing.attribution || 'OpenStreetMap',
   };
 }

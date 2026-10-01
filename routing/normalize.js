@@ -180,6 +180,13 @@ function normalizeStep(step) {
     ref: typeof step.ref === 'string' && step.ref.trim() ? step.ref.trim() : null,
     distance: Number.isFinite(step.distance) && step.distance >= 0 ? step.distance : null,
     duration: Number.isFinite(step.duration) && step.duration >= 0 ? step.duration : null,
+    // Roundabout exit number, when the provider's maneuver carries one (OSRM
+    // supplies `exit` for roundabout/rotary steps). Navigation uses it so a
+    // roundabout instruction can say which exit; a step without one keeps
+    // null and the instruction honestly omits it. TODO(navigation-phase)
+    // carried the per-step geometry drop; this field is the additive part
+    // live guidance needed from the same response.
+    exit: Number.isFinite(step.exit) && step.exit > 0 ? step.exit : null,
     maneuver,
   };
 }
