@@ -22,6 +22,11 @@ import { spinner } from '../loading.js';
 // would need its own attribution) updates it automatically.
 const OSM_PROVIDERS = new Set(['photon', 'nominatim', 'pelias']);
 
+// The panel's scroll cap: eight to ten rows would otherwise push the Selected
+// place card and the map frame off a phone screen. Both scrollable views
+// (suggestions and recents) share it.
+const SCROLL_CLASSES = 'max-h-80 overflow-y-auto';
+
 function keepFocus(e) {
   e.preventDefault();
 }
@@ -90,7 +95,7 @@ function recentsView(state, { onRepeat, onClearRecents, onClose }) {
       }),
     );
   }
-  const host = el('div', {}, children);
+  const host = el('div', { class: SCROLL_CLASSES }, children);
   host.querySelector('[data-search-clear-recents]')?.addEventListener('mousedown', keepFocus);
   host.querySelector('[data-search-clear-recents]')?.addEventListener('click', () => {
     onClearRecents();
@@ -120,7 +125,7 @@ function resultsView(state, { onSelect }) {
       }),
     ),
   );
-  return el('div', {}, [
+  return el('div', { class: SCROLL_CLASSES }, [
     listbox,
     OSM_PROVIDERS.has(state.results[0] && state.results[0].provider)
       ? el('p', {
@@ -132,7 +137,9 @@ function resultsView(state, { onSelect }) {
 }
 
 function noResultsView(state) {
-  return el('div', {}, [
+  // role="status" so assistive tech announces the state, like the loading
+  // spinner and the error alert already do.
+  return el('div', { role: 'status' }, [
     emptyState({
       title: 'No results',
       description: `No matches for "${state.query.trim()}". Check the spelling or try a different name.`,
@@ -141,9 +148,12 @@ function noResultsView(state) {
 }
 
 function errorView(state, { onRetry }) {
+  // A 429 from the app's own rate limiter is a busy moment, not an outage;
+  // say so instead of the generic failure title.
+  const rateLimited = state.error && state.error.code === 'rate_limited';
   return el('div', {}, [
     errorState({
-      title: 'Search is unavailable right now',
+      title: rateLimited ? 'Search is busy right now' : 'Search is unavailable right now',
       description:
         (state.error && state.error.message) ||
         'We could not reach the search service. Try again in a moment.',

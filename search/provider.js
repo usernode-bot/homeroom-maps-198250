@@ -31,6 +31,40 @@ function searchError(code, message) {
   return err;
 }
 
+// The one outbound-request helper the implemented adapters share. Every
+// failure becomes a typed provider_error with a message the client can show
+// unchanged: timeout/abort, unreachable host, non-OK status (upstream 429 is
+// called out honestly — the app's own rate limit is a separate, bucket-level
+// code), and an unreadable body. `fetchImpl` is injectable so tests never
+// touch the network.
+async function requestJson(url, { headers, timeoutMs, fetchImpl = fetch } = {}) {
+  let res;
+  try {
+    res = await fetchImpl(url, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
+      throw searchError('provider_error', 'The search provider did not answer in time.');
+    }
+    throw searchError('provider_error', 'The search provider could not be reached.');
+  }
+  if (!res.ok) {
+    throw searchError(
+      'provider_error',
+      res.status === 429
+        ? 'The search provider is throttling requests right now.'
+        : `The search provider answered with status ${res.status}.`,
+    );
+  }
+  try {
+    return await res.json();
+  } catch {
+    throw searchError('provider_error', 'The search provider sent an unreadable answer.');
+  }
+}
+
 const registry = new Map();
 
 function register(provider) {
@@ -53,4 +87,4 @@ function providerNames() {
   return [...registry.keys()];
 }
 
-module.exports = { searchError, register, getProvider, providerNames };
+module.exports = { searchError, requestJson, register, getProvider, providerNames };

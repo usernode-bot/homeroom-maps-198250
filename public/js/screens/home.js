@@ -13,8 +13,15 @@ import { createSearchSession } from '../services/search.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 
+// PLACEHOLDER(map-phase): until a map provider is connected, the honest end
+// of a selection is the Selected place card. When the map phase lands, this
+// hook is the single seam that also centres the map on the result's
+// coordinates and shows a marker (services/map.js is interface-only today;
+// /api/config still reports mapProvider: null).
+function focusSelectedPlace(_place) {}
+
 export async function render(ctx) {
-  const session = createSearchSession();
+  const session = createSearchSession({ onSelect: focusSelectedPlace });
 
   const bar = createSearchBar({
     onInput: (value) => session.input(value),

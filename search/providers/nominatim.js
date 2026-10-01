@@ -18,7 +18,7 @@
 // in Nominatim's own left/top/right/bottom ordering.
 'use strict';
 
-const { searchError } = require('../provider');
+const { searchError, requestJson } = require('../provider');
 const { normalizeResult, detailLine, KIND_LABELS, primarySubtag } = require('../normalize');
 
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -118,34 +118,15 @@ function createNominatim({ url, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_M
   }
 
   async function search(params) {
-    let res;
-    try {
-      res = await fetchImpl(buildUrl(params), {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': USER_AGENT,
-          ...(params.lang ? { 'Accept-Language': params.lang } : {}),
-        },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (err) {
-      if (err && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
-        throw searchError('provider_error', 'The search provider did not answer in time.');
-      }
-      throw searchError('provider_error', 'The search provider could not be reached.');
-    }
-    if (!res.ok) {
-      throw searchError(
-        'provider_error',
-        `The search provider answered with status ${res.status}.`,
-      );
-    }
-    let body;
-    try {
-      body = await res.json();
-    } catch {
-      throw searchError('provider_error', 'The search provider sent an unreadable answer.');
-    }
+    const body = await requestJson(buildUrl(params), {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': USER_AGENT,
+        ...(params.lang ? { 'Accept-Language': params.lang } : {}),
+      },
+      timeoutMs,
+      fetchImpl,
+    });
     const elements = Array.isArray(body) ? body : [];
     return elements.map((e) => normalizeElement(e, 'nominatim', params.lang)).filter(Boolean);
   }

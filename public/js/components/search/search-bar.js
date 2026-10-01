@@ -20,7 +20,6 @@ export function createSearchBar({ onInput, onFocus, onBlur, onKeydown, onClear }
     role: 'combobox',
     'aria-autocomplete': 'list',
     'aria-expanded': 'false',
-    'aria-controls': 'hm-search-listbox',
     class:
       'w-full rounded-pill border border-line bg-surface px-4 py-3 pr-11 text-sm text-ink placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-70',
   });
@@ -52,6 +51,14 @@ export function createSearchBar({ onInput, onFocus, onBlur, onKeydown, onClear }
     input.setAttribute('aria-expanded', state.open ? 'true' : 'false');
     const showClear = state.query.length > 0;
     clearBtn.classList.toggle('hidden', !showClear);
+    // Point at the listbox only while it actually exists: the panel renders
+    // it just during the results phase, so a dangling reference in the
+    // recents/loading/error phases would point assistive tech at nothing.
+    if (state.open && state.results && state.results.length > 0) {
+      input.setAttribute('aria-controls', 'hm-search-listbox');
+    } else {
+      input.removeAttribute('aria-controls');
+    }
     // Point at the keyboard-highlighted option while the listbox is open.
     if (state.open && state.highlighted >= 0) {
       input.setAttribute('aria-activedescendant', `hm-search-opt-${state.highlighted}`);
