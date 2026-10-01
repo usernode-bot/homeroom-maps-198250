@@ -21,17 +21,33 @@
   },
   "tests": [
     {
-      "id": "home.shell",
-      "name": "Home shell renders",
+      "id": "home.map",
+      "name": "Home map renders",
       "path": "/#/",
-      "expectSelector": "[data-map-container]",
+      "expectSelector": "[data-map-canvas]",
       "visual": true,
       "impact": [
         "public/index.html",
         "public/js/**",
+        "public/js/map/**",
+        "public/js/services/map.js",
         "styles/**",
-        "tailwind.config.js"
-      ]
+        "tailwind.config.js",
+        "Dockerfile",
+        "package.json"
+      ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Home shows map attribution",
+      "path": "/#/",
+      "expectText": "OpenStreetMap",
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Home map not-configured state",
+      "path": "/#/?map=unconfigured",
+      "expectText": "Map is not configured yet"
     },
     {
       "name": "Search bar renders on Home",
@@ -57,6 +73,12 @@
       "name": "Profile opens",
       "path": "/#/profile",
       "expectText": "Appearance"
+    }
+  ],
+  "permissions": [
+    {
+      "capability": "geolocation",
+      "reason": "Shows your location on the map"
     }
   ]
 }

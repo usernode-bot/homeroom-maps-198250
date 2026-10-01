@@ -9,6 +9,7 @@ const {
   JWT_PUBLIC_KEY,
   APP_AUDIENCE,
   PUBLIC_DIR,
+  resolveMapConfig,
 } = require('./config');
 const searchApi = require('./search');
 const { firstAcceptLanguage } = require('./search/normalize');
@@ -110,18 +111,22 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // Public, non-sensitive configuration for the client. Returned by GET so the
 // auth middleware does not require a token for it, but it carries no secret:
 // only values safe to print in a browser. `mapProvider: null` is the explicit
-// signal that no map provider is connected yet; it is the seam a real provider
-// plugs into in a later stage. `searchProvider` mirrors it: the configured
-// search adapter's name, or null while the active adapter is a placeholder.
-// Nothing here reads dapp.json secrets.
+// signal that no map provider is connected; the `map` block carries the public
+// source details (style URLs, the exact attribution string) the client needs,
+// all resolved from the environment by config.js. `searchProvider` mirrors
+// it: the configured search adapter's name, or null while the active adapter
+// is a placeholder. Nothing here reads dapp.json secrets, and the keyless
+// default reads no key at all.
 app.get('/api/config', (_req, res) => {
+  const { mapProvider, map } = resolveMapConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
-    mapProvider: null,
+    mapProvider,
+    map,
     searchProvider: searchApi.activeProviderName(),
     features: {
-      map: false,
+      map: Boolean(map.configured),
       search: true,
       directions: false,
       communityVoting: false,
