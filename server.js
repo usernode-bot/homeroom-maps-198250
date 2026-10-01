@@ -2,28 +2,29 @@ const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
+const {
+  IS_STAGING,
+  PORT,
+  PLATFORM_ORIGIN,
+  JWT_PUBLIC_KEY,
+  APP_AUDIENCE,
+  PUBLIC_DIR,
+} = require('./config');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = PORT;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-// The platform signs user-identity tokens with an RSA private key it never
-// shares. Containers get only the PUBLIC half, so this app can verify who a
-// user is but cannot mint an identity — and neither can any other app.
-const JWT_PUBLIC_KEY = (process.env.USERNODE_JWT_PUBLIC_KEY || '')
-  .replace(/\\n/g, '\n');
-
-// Tokens are minted for one app: the audience is this app's numeric id, so a
-// token issued for a different app is rejected below rather than accepted as
-// a valid user.
-const APP_AUDIENCE = process.env.USERNODE_APP_ID
-  ? 'usernode:app:' + process.env.USERNODE_APP_ID
-  : null;
+// Lifecycle state. `server` is the listener captured so the shutdown handler
+// can stop accepting connections; `shuttingDown` makes /health report draining
+// and the shutdown handler idempotent.
+let server = null;
+let shuttingDown = false;
 
 // Paths that stay open without authentication. Add a path here (and add it
 // with `app.get`/`app.post` below) if you deliberately want it public.
 // Everything else requires a valid platform-issued JWT.
-const PUBLIC_API_PATHS = new Set(['/health']);
+const PUBLIC_API_PATHS = new Set(['/health', '/api/config']);
 
 app.use(express.json());
 
@@ -43,13 +44,7 @@ app.use(express.json());
 // public: the platform serves them anonymously from any app origin, and a
 // login redirect arriving where a <script> was expected is exactly the
 // failure a relative path is meant to avoid.
-// The platform's origin, at RUNTIME, and ONLY from the variable the platform
-// injects. No hostname is written into this file: a baked-in one is what left
-// the whole fleet pointing at a domain the platform had moved away from.
-// Unset only outside the platform (a plain local `node server.js`) — set
-// USERNODE_PLATFORM_ORIGIN there too if you want the hosted assets locally.
-const PLATFORM_ORIGIN = (process.env.USERNODE_PLATFORM_ORIGIN || '')
-  .replace(/\/+$/, '');
+// PLATFORM_ORIGIN, JWT_PUBLIC_KEY and APP_AUDIENCE come from config.js.
 
 app.get(/^\/usernode-(?:bridge|native|tailwind)\//, async (req, res) => {
   try {
@@ -100,7 +95,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/health', (_req, res) =>
+  res.status(shuttingDown ? 503 : 200).json({ status: shuttingDown ? 'draining' : 'ok' }));
 
 // The template ships no favicon file; index.html carries an inline SVG
 // icon instead. Answer 204 here so anything that still probes
@@ -109,35 +105,61 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 // fresh load.
 app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
-// Button press
-app.post('/api/press', async (req, res) => {
-  try {
-    await pool.query(`
-      INSERT INTO presses (user_id, username) VALUES ($1, $2)
-    `, [req.user.id, req.user.username]);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// Public, non-sensitive configuration for the client. Returned by GET so the
+// auth middleware does not require a token for it, but it carries no secret:
+// only values safe to print in a browser. `mapProvider: null` is the explicit
+// signal that no map provider is connected yet; it is the seam a real provider
+// plugs into in a later stage. Nothing here reads dapp.json secrets.
+app.get('/api/config', (_req, res) => {
+  res.json({
+    appName: 'Homeroom Maps',
+    environment: IS_STAGING ? 'staging' : 'production',
+    mapProvider: null,
+    features: {
+      map: false,
+      search: false,
+      directions: false,
+      communityVoting: false,
+      ai: false,
+      traffic: false,
+      offline: false,
+    },
+  });
 });
 
-// Leaderboard
-app.get('/api/leaderboard', async (_req, res) => {
-  try {
-    const { rows } = await pool.query(`
-      SELECT username, COUNT(*) as presses
-      FROM presses
-      GROUP BY username
-      ORDER BY presses DESC
-      LIMIT 50
-    `);
-    res.json({ leaderboard: rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// The signed-in person, from the verified platform token. Profile renders
+// these; `locale` may be null (the platform sends no preference for most
+// users). The shape matches the platform's req.user contract.
+app.get('/api/me', (req, res) => {
+  res.json({
+    id: req.user.id,
+    username: req.user.username,
+    locale: req.user.locale || null,
+  });
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Deferred API surface for later stages (Phase 0 ships no map, search,
+// directions or community backend). A request to any of these answers a
+// clear, honest 501 rather than a fabricated result, so no screen can
+// mistake a stub for working functionality.
+const NOT_IMPLEMENTED = [
+  '/api/places',
+  '/api/search',
+  '/api/directions',
+  '/api/community',
+  '/api/saved',
+];
+for (const prefix of NOT_IMPLEMENTED) {
+  app.all(prefix + '/*', notImplemented);
+  app.all(prefix, notImplemented);
+}
+function notImplemented(_req, res) {
+  res.status(501).json({
+    error: { code: 'not_implemented', message: 'This feature is not built yet.' },
+  });
+}
+
+app.use(express.static(PUBLIC_DIR));
 
 // HTML shell: serve the app if authenticated. Unauthenticated top-level
 // visits (share links pasted into a browser — Sec-Fetch-Dest: document)
@@ -147,6 +169,30 @@ app.use(express.static(path.join(__dirname, 'public')));
 // without Sec-Fetch-*) gets the "open in Homeroom" landing page instead
 // of a redirect, so the platform shell is never loaded INSIDE its own
 // app iframe and stray visits still don't reveal the app.
+// A /api/* path that matched none of the routes above is a 404 in JSON, not
+// the HTML shell. Registered before the catch-all so an unknown API call under
+// the auth gate never receives index.html.
+app.use('/api', (_req, res) => {
+  res.status(404).json({
+    error: { code: 'not_found', message: 'No such API route.' },
+  });
+});
+
+// Centralized error handler. Returns the same JSON error shape as the rest of
+// the API and never leaks a stack trace outside staging. Reached by any
+// synchronous throw in a handler; wrap any future async handler so a
+// rejected promise is forwarded here too.
+app.use((err, _req, res, _next) => {
+  console.error('[api error]', err && err.stack ? err.stack : err);
+  res.status(500).json({
+    error: {
+      code: 'internal_error',
+      message: 'Something went wrong on our side.',
+      ...(IS_STAGING ? { detail: String((err && err.message) || err) } : {}),
+    },
+  });
+});
+
 app.get('*', (req, res) => {
   if (!req.user) {
     // Deep-link pass-through (platform #743): carry the visited
@@ -171,21 +217,44 @@ app.get('*', (req, res) => {
   </div>
 </body>`);
   }
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 async function start() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS presses (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      username VARCHAR(255) NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  const server = app.listen(port, () => console.log(`Listening on :${port}`));
+  // No boot migration this stage. Phase 0 creates no tables: the community,
+  // place and map tables arrive with their features in later stages. The
+  // starter template's `presses` table is intentionally NOT created here (a
+  // database that already has it keeps it; nothing drops it).
+  server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
 }
+
+// Graceful shutdown: on SIGTERM/SIGINT stop accepting connections, give
+// in-flight requests a short drain window, close the Postgres pool and exit.
+// The deadline is a literal constant (~3s), not an env var — the platform's
+// stop grace is a ceiling, not an allowance to spend.
+const DRAIN_MS = 3000;
+
+async function shutdown(signal) {
+  if (shuttingDown) return; // idempotent: a repeat signal during drain is a no-op
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} received, draining`);
+  if (server) {
+    server.close(() => {});
+    server.closeIdleConnections?.();
+    const t = setTimeout(() => server.closeAllConnections?.(), DRAIN_MS);
+    t.unref?.();
+  }
+  try {
+    await pool.end();
+  } catch (e) {
+    console.error('[shutdown] pool.end failed', e && e.message);
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 start().catch(err => { console.error(err); process.exit(1); });

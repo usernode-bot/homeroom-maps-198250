@@ -11,3 +11,61 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Homeroom Maps theme tokens — the app's own palette.
+ *
+ * Semantic names, never a map product's colours. `:root` is the light
+ * palette; `.dark` (toggled on <html> by the platform-theme bootstrap in
+ * index.html) overrides it. Tailwind maps these to utilities in
+ * tailwind.config.js, so screens write `bg-surface` / `text-muted` and never
+ * a raw hex. Only the values change between light and dark; the names do not.
+ */
+@layer base {
+  :root {
+    --hm-bg: #f6f7f9;
+    --hm-surface: #ffffff;
+    --hm-surface-raised: #eef0f4;
+    --hm-surface-translucent: rgba(255, 255, 255, 0.7);
+    --hm-border: #dfe3ea;
+    --hm-text: #14171d;
+    --hm-text-muted: #5c6472;
+    --hm-brand: #4f46e5;
+    --hm-brand-contrast: #ffffff;
+    --hm-accent: #0d9488;
+    --hm-accent-soft: rgba(13, 148, 136, 0.14);
+    --hm-danger: #dc2626;
+    --hm-radius-card: 1rem;
+    --hm-radius-pill: 9999px;
+
+    /* Re-theme the native UI kit from this app's own tokens, on :root and
+     * .dark alike, rather than forking its CSS. */
+    --un-accent: var(--hm-brand);
+    --un-accent-contrast: var(--hm-brand-contrast);
+    --un-hairline: var(--hm-border);
+    --un-muted: var(--hm-text-muted);
+    --un-group-bg: var(--hm-surface);
+    --un-navbar-bg: var(--hm-surface-translucent);
+    --un-sheet-bg: var(--hm-surface);
+    --un-popover-bg: var(--hm-surface);
+    --un-panel-bg: var(--hm-surface);
+    --un-toast-bg: #1b1f27;
+    --un-toast-text: #f5f6f8;
+    --un-toast-action: #a5b4fc;
+    --un-radius-card: var(--hm-radius-card);
+  }
+
+  .dark {
+    --hm-bg: #0b0d12;
+    --hm-surface: #12151c;
+    --hm-surface-raised: #1a1f28;
+    --hm-surface-translucent: rgba(18, 21, 28, 0.72);
+    --hm-border: #262b36;
+    --hm-text: #f2f3f6;
+    --hm-text-muted: #98a1b0;
+    --hm-brand: #6366f1;
+    --hm-brand-contrast: #ffffff;
+    --hm-accent: #2dd4bf;
+    --hm-accent-soft: rgba(45, 212, 191, 0.16);
+    --hm-danger: #f87171;
+  }
+}
