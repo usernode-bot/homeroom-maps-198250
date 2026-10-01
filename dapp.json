@@ -13,6 +13,11 @@
       "description": "Base URL of the Photon instance. Defaults to the public demo server; point it at a self-hosted instance to scale past its soft limits.",
       "required": false,
       "default": "https://photon.komoot.io"
+    },
+    {
+      "key": "PLACE_PROVIDER",
+      "description": "Which place-data provider adapter to use for per-place depth: photos, opening hours, phone, website, rating, business status. No adapter is implemented yet (Phase 3 ships the model, service and UI with honest Not-available states), so leaving this unset keeps /api/places answering 501 instead of serving fabricated POI data. Selection criteria, in order: (1) worldwide coverage of the place types the app surfaces, (2) per-place detail depth, (3) licensing that permits storing and displaying results, (4) cost at this app's scale, (5) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
+      "required": false
     }
   ],
   "visibility": {
@@ -39,9 +44,29 @@
       "expectSelector": "[data-search-input]"
     },
     {
-      "name": "Discover opens",
+      "name": "Discover opens with place search",
       "path": "/#/discover",
-      "expectText": "Places and points of interest will appear here."
+      "expectSelector": "[data-places-search]"
+    },
+    {
+      "name": "Discover shows the place search empty state",
+      "path": "/#/discover",
+      "expectText": "Find a place"
+    },
+    {
+      "id": "places.discover",
+      "name": "Discover places screen renders",
+      "path": "/#/discover",
+      "expectSelector": "[data-places-search]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/discover.js",
+        "public/js/screens/place-detail.js",
+        "public/js/components/place/**",
+        "public/js/services/places-model.js",
+        "public/js/services/places.js",
+        "public/js/services/place-detail.js"
+      ]
     },
     {
       "name": "Directions opens",

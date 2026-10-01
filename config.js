@@ -56,6 +56,26 @@ const PHOTON_URL = (process.env.PHOTON_URL || 'https://photon.komoot.io')
 const PELIAS_URL = (process.env.PELIAS_URL || '').trim().replace(/\/+$/, '');
 const PELIAS_API_KEY = (process.env.PELIAS_API_KEY || '').trim();
 
+// Place-data provider configuration (Phase 3, Places).
+//
+// PLACE_PROVIDER names the adapter the place service (places/) uses for
+// per-place depth: photos, opening hours, phone, website, rating, business
+// status. There is deliberately NO default: no adapter is implemented yet, so
+// leaving this unset keeps /api/places answering an honest 501 rather than
+// serving fabricated POI data. Selection criteria for the eventual provider,
+// in order (the same list lives in the dapp.json PLACE_PROVIDER description):
+//   1. worldwide coverage of the place types the app surfaces,
+//   2. per-place detail depth: photos, opening hours, phone, website, rating,
+//   3. licensing that permits storing and displaying results,
+//   4. cost at this app's scale,
+//   5. the required credential declarable through the platform Secrets UI.
+// Per the platform secrets convention, the chosen provider's API key is
+// declared in dapp.json in the same change that implements its adapter —
+// never hardcoded here. Like SEARCH_PROVIDER, the value is lower-cased.
+const PLACE_PROVIDER = (process.env.PLACE_PROVIDER || '')
+  .trim()
+  .toLowerCase();
+
 module.exports = {
   IS_STAGING,
   PORT,
@@ -67,4 +87,5 @@ module.exports = {
   PHOTON_URL,
   PELIAS_URL,
   PELIAS_API_KEY,
+  PLACE_PROVIDER,
 };
