@@ -2,6 +2,10 @@
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
   "secrets": [],
+  "visibility": {
+    "build": "private",
+    "view": "private"
+  },
   "tests": [
     {
       "id": "home.shell",
