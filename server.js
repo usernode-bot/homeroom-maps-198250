@@ -12,6 +12,7 @@ const {
   resolveMapConfig,
 } = require('./config');
 const searchApi = require('./search');
+const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 
 const app = express();
@@ -115,8 +116,10 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // source details (style URLs, the exact attribution string) the client needs,
 // all resolved from the environment by config.js. `searchProvider` mirrors
 // it: the configured search adapter's name, or null while the active adapter
-// is a placeholder. Nothing here reads dapp.json secrets, and the keyless
-// default reads no key at all.
+// is a placeholder. `placeProvider` is the same signal for per-place data
+// (photos, hours, contact, rating): null until a place provider adapter
+// ships. Nothing here reads dapp.json secrets, and the keyless default reads
+// no key at all.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   res.json({
@@ -125,6 +128,7 @@ app.get('/api/config', (_req, res) => {
     mapProvider,
     map,
     searchProvider: searchApi.activeProviderName(),
+    placeProvider: placesApi.activeProviderName(),
     features: {
       map: Boolean(map.configured),
       search: true,
@@ -194,12 +198,63 @@ async function handleSearch(req, res, mode) {
 app.get('/api/search/suggest', (req, res) => handleSearch(req, res, 'suggest'));
 app.get('/api/search', (req, res) => handleSearch(req, res, 'search'));
 
+// Places — the two read routes of the place service (places/index.js). Both
+// are GET under /api/, so the auth gate above covers them; the provider key
+// never leaves the server. The typed error codes from places/provider.js map
+// to HTTP statuses here and use the app's standard JSON error shape, so the
+// client's apiGet() turns them into typed ApiErrors for free. With no place
+// provider adapter implemented yet, every call answers an honest 501
+// (not_configured) rather than fabricated POI data.
+const PLACES_ERROR_STATUS = {
+  invalid_query: 400,
+  not_found: 404,
+  not_configured: 501,
+  rate_limited: 429,
+};
+
+async function handlePlaces(req, res, handler) {
+  try {
+    // Language resolution order, same as search: explicit query param, then
+    // the signed-in user's platform locale (JWT claim), then Accept-Language,
+    // then omit and let the provider default.
+    const lang =
+      req.query.lang ||
+      (req.user && req.user.locale) ||
+      firstAcceptLanguage(req.headers['accept-language']) ||
+      null;
+    const out = await handler({
+      lang,
+      raw: req.query,
+      user: req.user || null,
+    });
+    res.json(out);
+  } catch (err) {
+    const code = err && err.code ? err.code : 'provider_error';
+    console.warn(`[places] ${code}: ` + (err && err.message));
+    res.status(PLACES_ERROR_STATUS[code] || 502).json({
+      error: { code, message: (err && err.message) || 'The place lookup failed.' },
+    });
+  }
+}
+
+app.get('/api/places', (req, res) =>
+  handlePlaces(req, res, ({ lang, raw }) =>
+    placesApi.getPlaces({
+      q: raw.q,
+      near: raw.near,
+      radius: raw.radius,
+      bbox: raw.bbox,
+      limit: raw.limit,
+      lang,
+    })));
+app.get('/api/places/:id', (req, res) =>
+  handlePlaces(req, res, ({ lang }) => placesApi.getPlaceDetails(req.params.id, { lang })));
+
 // Deferred API surface for later stages (Phase 0 ships no map, directions or
-// community backend; /api/search is now real). A request to any of these
-// answers a clear, honest 501 rather than a fabricated result, so no screen
-// can mistake a stub for working functionality.
+// community backend; /api/search and /api/places are now real). A request to
+// any of these answers a clear, honest 501 rather than a fabricated result,
+// so no screen can mistake a stub for working functionality.
 const NOT_IMPLEMENTED = [
-  '/api/places',
   '/api/directions',
   '/api/community',
   '/api/saved',
