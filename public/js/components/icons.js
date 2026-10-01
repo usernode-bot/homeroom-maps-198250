@@ -13,6 +13,9 @@ const PATHS = {
     '<path d="M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19"/><circle cx="9.5" cy="7" r="3.5"/><path d="M21 19v-1.5a4 4 0 0 0-3-3.85"/><path d="M15.5 3.65a4 4 0 0 1 0 7.7"/>',
   profile:
     '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4-4"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  history: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
 };
 
 export function icon(name, { class: extra = 'h-5 w-5' } = {}) {

@@ -1,32 +1,81 @@
-// Home — the map-first screen, built as a frame rather than a map. Nothing
-// here searches, centers or routes: the regions the finished product needs are
-// present and honestly labelled, so the layout is ready for a real map later.
+// Home — the map-first screen. Search is live: typing queries the app's own
+// search service (see services/search.js), suggestions open in a panel below
+// the input, a chosen suggestion shows as the Selected place card. The map
+// frame is still an honest placeholder: no map provider is connected
+// (`mapProvider: null` from /api/config), so nothing here centers a map.
 //
-// Deferred (Phase 1+): the actual map canvas, place search and the two
-// overlay controls wired to a map provider. `mapProvider` from /api/config is
-// null, which is the signal this screen reads to decide it has no map.
+// Deferred (map phase): "Search this area" and "Nearby" controls. The search
+// service already exposes searchInView(bbox) and searchNear(lat, lon, km) and
+// the server routes accept them; only the map-anchored UI is missing.
 import { el } from '../components/dom.js';
 import { placeholderPanel } from '../components/placeholder-panel.js';
+import { createSearchSession } from '../services/search.js';
+import { createSearchBar } from '../components/search/search-bar.js';
+import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 
 export async function render(ctx) {
+  const session = createSearchSession();
+
+  const bar = createSearchBar({
+    onInput: (value) => session.input(value),
+    onFocus: () => session.open(),
+    onBlur: (e) => {
+      // Closing on blur, unless focus moved into the panel (option clicks
+      // keep the input focused via mousedown preventDefault, so this only
+      // fires for genuinely outside targets like Tab or a click elsewhere).
+      if (!e.relatedTarget || !panel.root.contains(e.relatedTarget)) {
+        session.close();
+      }
+    },
+    onKeydown: (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        session.move(1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        session.move(-1);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const state = session.getState();
+        if (state.highlighted >= 0 && state.results[state.highlighted]) {
+          session.select(state.results[state.highlighted]);
+        } else {
+          session.commit();
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        session.escape();
+      }
+    },
+    onClear: () => {
+      session.clearInput();
+      bar.input.focus();
+    },
+  });
+
+  const panel = createSearchPanel({ session });
+
+  const selectedSlot = el('div', { class: 'contents', dataset: { selectedPlace: 'slot' } });
+
+  function sync(state) {
+    bar.update(state);
+    panel.update(state);
+    selectedSlot.replaceChildren(
+      state.selected ? selectedPlaceCard({ place: state.selected, onRemove: () => session.removeSelected() }) : [],
+    );
+  }
+  session.subscribe(sync);
+
   ctx.content.replaceChildren(
     el('h1', { class: 'sr-only', text: 'Home' }),
 
-    // Search area. A real text input so the material is present, disabled
-    // because search is not built, with an explicit "coming soon" label.
-    el('div', { class: 'flex flex-col gap-1.5' }, [
-      el('div', { class: 'relative' }, [
-        el('input', {
-          type: 'search',
-          disabled: true,
-          placeholder: 'Search places',
-          'aria-label': 'Search places',
-          class:
-            'w-full rounded-pill border border-line bg-surface px-4 py-3 text-sm text-ink placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-70',
-        }),
-      ]),
-      el('p', { class: 'px-1 text-xs text-muted', text: 'Search coming soon' }),
+    // Live search area: the input, the results panel beneath it, and the
+    // Selected place card slot above the map frame.
+    el('div', { class: 'flex flex-col gap-1.5', dataset: { search: 'true' } }, [
+      bar.root,
+      panel.root,
     ]),
+    selectedSlot,
 
     // Map container. An empty, labelled frame — never a fake map, tile image
     // or provider SDK. The floating controls are disabled placeholders.
@@ -64,6 +113,8 @@ export async function render(ctx) {
         'Points of interest, saved places and map contributions will appear here once the map is connected.',
     }),
   );
+
+  sync(session.getState());
 }
 
 // A disabled overlay control on the map frame. Purely a placeholder: it has
