@@ -69,3 +69,36 @@
     --hm-danger: #f87171;
   }
 }
+
+/* Map renderer control theming.
+ *
+ * MapLibre ships light-only control colours (white pills, dark glyphs). Rather
+ * than fork its stylesheet, re-point those surfaces at this app's tokens so
+ * the renderer's own control buttons and its required attribution control stay
+ * legible in both themes. Nothing here hides or moves attribution: only its
+ * colours change, and `!important` is needed only because the vendored
+ * stylesheet is appended after this one.
+ */
+.maplibregl-ctrl-group {
+  background: var(--hm-surface) !important;
+  border: 1px solid var(--hm-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--hm-border);
+}
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib.maplibregl-compact,
+.maplibregl-ctrl-attrib-button {
+  background-color: var(--hm-surface-translucent) !important;
+  color: var(--hm-text-muted) !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--hm-text-muted) !important;
+}
+/* The control glyphs are baked dark; invert them on the dark surface so the
+ * icons do not vanish. */
+.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon,
+.dark .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+}

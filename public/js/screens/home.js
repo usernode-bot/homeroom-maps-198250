@@ -1,19 +1,86 @@
-// Home — the map-first screen, built as a frame rather than a map. Nothing
-// here searches, centers or routes: the regions the finished product needs are
-// present and honestly labelled, so the layout is ready for a real map later.
+// Home — the map-first screen. It owns the map frame and the overlay controls,
+// and asks the map service for a live MapAdapter. The service and adapter
+// report which of the map states applies; this screen renders that state using
+// the app's existing components (the loading skeleton, the shared error state)
+// so nothing here invents new chrome.
 //
-// Deferred (Phase 1+): the actual map canvas, place search and the two
-// overlay controls wired to a map provider. `mapProvider` from /api/config is
-// null, which is the signal this screen reads to decide it has no map.
+// The search box, the Places panel and the disabled "Map layers" control stay
+// exactly as they were: this phase builds the map and leaves search,
+// directions, POI data and layers as labelled placeholders.
 import { el } from '../components/dom.js';
+import { errorState } from '../components/error-state.js';
+import { loading } from '../components/loading.js';
 import { placeholderPanel } from '../components/placeholder-panel.js';
+import { getState } from '../state.js';
+import { createMapService } from '../services/map.js';
+import { MapErrorKind } from '../map/errors.js';
+import { attributionParts, rendererLink } from '../map/attribution.js';
+import { mapControls } from '../map/controls.js';
+
+const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
+
+// The live map for the screen currently mounted. Torn down on the next render
+// so a navigation never leaves a WebGL context or tile poller behind.
+let activeService = null;
 
 export async function render(ctx) {
+  if (activeService) {
+    activeService.destroy();
+    activeService = null;
+  }
+
+  const mapConfig = (getState().config && getState().config.map) || null;
+  const force = demoState();
+
+  // The frame keeps one height across every state, so switching between them
+  // never collapses or jumps the page.
+  const container = el('div', {
+    class: 'relative min-h-[60vh] overflow-hidden rounded-card border border-line bg-surface-raised',
+    dataset: { mapContainer: 'live' },
+  });
+  // `surface` is the map region: it carries the descriptive label and the
+  // `role="img"` the region is meant to keep for assistive tech, and the
+  // `data-map-canvas` hook a check can find in every state. The renderer owns
+  // it and it stays otherwise empty; the loading, message and error states are
+  // siblings in `overlay`, so they remain readable to a screen reader rather
+  // than being swallowed by `role="img"`. `overlay` is hidden once the map is
+  // live.
+  const surface = el('div', {
+    class: 'absolute inset-0',
+    dataset: { mapCanvas: 'true' },
+    role: 'img',
+    'aria-label': 'Interactive world map',
+  });
+  const overlay = el('div', {
+    class: 'absolute inset-0 flex flex-col justify-center bg-surface-raised',
+    dataset: { mapOverlay: 'true' },
+    // Announced politely as loading gives way to a map or an error.
+    'aria-live': 'polite',
+  });
+  const controls = el('div', {
+    class: 'pointer-events-none absolute right-3 top-3 z-10 flex flex-col items-end',
+    dataset: { mapControls: 'live' },
+  });
+  const note = el('p', {
+    class: 'px-1 text-xs text-muted',
+    dataset: { mapNote: 'true' },
+    role: 'status',
+    'aria-live': 'polite',
+  });
+  note.style.display = 'none';
+
+  const attribution = el('p', {
+    class:
+      'px-1 text-[11px] leading-relaxed text-muted [&_a]:text-brand [&_a]:underline',
+    dataset: { mapAttribution: 'true' },
+  });
+
+  container.append(surface, overlay, controls);
+
   ctx.content.replaceChildren(
     el('h1', { class: 'sr-only', text: 'Home' }),
 
-    // Search area. A real text input so the material is present, disabled
-    // because search is not built, with an explicit "coming soon" label.
+    // Search remains a placeholder: no geocoding or search service is wired.
     el('div', { class: 'flex flex-col gap-1.5' }, [
       el('div', { class: 'relative' }, [
         el('input', {
@@ -28,56 +95,327 @@ export async function render(ctx) {
       el('p', { class: 'px-1 text-xs text-muted', text: 'Search coming soon' }),
     ]),
 
-    // Map container. An empty, labelled frame — never a fake map, tile image
-    // or provider SDK. The floating controls are disabled placeholders.
-    el('div', { class: 'relative' }, [
-      el(
-        'div',
-        {
-          class:
-            'flex min-h-[46vh] flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line bg-surface-raised/60 p-6 text-center',
-          dataset: { mapContainer: 'placeholder' },
-          role: 'img',
-          'aria-label': 'Map canvas placeholder',
-        },
-        [
-          el('p', { class: 'text-base font-semibold text-ink', text: 'Map' }),
-          el('p', {
-            class: 'max-w-sm text-sm text-muted leading-relaxed',
-            text: 'Map canvas coming soon. No map provider is connected yet.',
-          }),
-        ],
-      ),
-      el(
-        'div',
-        { class: 'absolute right-3 top-3 flex flex-col gap-2', dataset: { mapControls: 'placeholder' } },
-        [
-          placeholderControl('My location'),
-          placeholderControl('Map layers'),
-        ],
-      ),
-    ]),
+    container,
+    note,
+    attribution,
 
     placeholderPanel({
       title: 'Places',
       description:
-        'Points of interest, saved places and map contributions will appear here once the map is connected.',
+        'Points of interest, saved places and map contributions are coming soon.',
     }),
+  );
+
+  const config = mapConfig && mapConfig.configured
+    ? mapConfig
+    : {
+        configured: false,
+        provider: null,
+        label: null,
+        styleUrl: null,
+        styleUrlDark: null,
+        attribution: DEFAULT_ATTRIBUTION,
+        capabilities: { rotation: false, touchGestures: false, accuracyCircle: false },
+      };
+
+  // The app's own attribution strip is rendered up front from config, so it is
+  // correct and visible even while the map is loading or has failed. This is
+  // what satisfies the data licence when tiles never arrive.
+  renderAttribution(attribution, config.attribution || DEFAULT_ATTRIBUTION);
+
+  const view = { container, surface, overlay, controls, note };
+
+  // A forced demo state short-circuits the real path only for the state it
+  // names; every other route mounts the live adapter through the service.
+  if (force === 'unconfigured') {
+    showMessage(view, 'unconfigured');
+    return;
+  }
+
+  mountMap(view, config, force === 'unsupported' ? 'unsupported' : null);
+}
+
+function mountMap(view, config, force = null) {
+  // A retry builds a fresh adapter; drop the previous one first so its WebGL
+  // context and renderer DOM do not stack up behind the new map.
+  if (activeService) {
+    activeService.destroy();
+    activeService = null;
+  }
+  showOverlay(view, loading({ label: 'Loading map' }));
+  const service = createMapService(config, {
+    force,
+    onState: (state, err) => {
+      if (activeService !== service) return;
+      if (state === 'ready') onReady(service, view);
+      else if (state === 'error') onFailure(service, view, err);
+    },
+  });
+  activeService = service;
+  service.mount(view.surface).catch((err) => {
+    if (activeService === service) onFailure(service, view, err);
+  });
+}
+
+function onReady(service, view) {
+  hideOverlay(view);
+  view.controls.replaceChildren(liveControls(service, view));
+}
+
+function onFailure(service, view, err) {
+  if (activeService !== service) return;
+  const kind = (err && err.kind) || MapErrorKind.STYLE_ERROR;
+
+  if (kind === MapErrorKind.UNSUPPORTED_DEVICE) {
+    showMessage(view, 'unsupported');
+    return;
+  }
+  if (kind === MapErrorKind.NOT_CONFIGURED) {
+    showMessage(view, 'unconfigured');
+    return;
+  }
+
+  // Network failure, provider rejection and a malformed style all render the
+  // shared error state, with a plain-language reason and a Try again action
+  // that re-mounts the map. Never a raw stack.
+  view.controls.replaceChildren(disabledControls());
+  showOverlay(
+    view,
+    errorState({
+      title:
+        kind === MapErrorKind.PROVIDER
+          ? 'The map provider could not serve the map'
+          : 'We could not load the map',
+      description: (err && err.message) || 'Check your connection and try again.',
+      onRetry: () => mountMap(view, service.currentConfig()),
+    }),
+  );
+  if (err && err.detail) console.warn('[map] ' + kind + ': ' + err.detail);
+}
+
+// A state-specific message inside the frame, keeping the frame's height so the
+// page never collapses or jumps.
+function showMessage(view, kind) {
+  const copy = {
+    unconfigured: {
+      title: 'Map is not configured yet',
+      body: 'No map provider is connected. Set MAP_PROVIDER and a style URL to turn the map on.',
+    },
+    unsupported: {
+      title: 'This device cannot show the interactive map',
+      body: 'The map needs WebGL, which this browser or device does not provide. Everything else on this screen still works.',
+    },
+  }[kind];
+  view.controls.replaceChildren(disabledControls());
+  showOverlay(
+    view,
+    el(
+      'div',
+      {
+        class:
+          'flex h-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-line p-6 text-center',
+      },
+      [
+        el('p', { class: 'text-base font-semibold text-ink', text: copy.title }),
+        el('p', { class: 'max-w-sm text-sm text-muted leading-relaxed', text: copy.body }),
+      ],
+    ),
   );
 }
 
-// A disabled overlay control on the map frame. Purely a placeholder: it has
-// no handler and cannot be activated.
-function placeholderControl(label) {
-  return el(
-    'button',
-    {
-      type: 'button',
-      disabled: true,
-      class:
-        'rounded-pill border border-line bg-surface px-3 py-1.5 text-xs font-medium text-muted shadow-sm disabled:cursor-not-allowed disabled:opacity-70',
-      title: 'Coming soon',
+// The overlay carries a `flex` display class, which outranks the UA stylesheet's
+// `[hidden]` rule, so visibility is toggled with `display` directly rather than
+// the `hidden` attribute.
+function showOverlay(view, node) {
+  view.overlay.style.display = '';
+  view.overlay.replaceChildren(node);
+}
+
+function hideOverlay(view) {
+  view.overlay.replaceChildren();
+  view.overlay.style.display = 'none';
+}
+
+function liveControls(service, view) {
+  const column = mapControls({
+    capabilities: service.capabilities(),
+    myLocationOn: false,
+    onZoomIn: () => service.zoomIn(),
+    onZoomOut: () => service.zoomOut(),
+    onResetNorth: () => service.resetNorth(),
+    onMyLocation: () => requestLocation(service, view),
+  });
+  column.classList.add('pointer-events-auto');
+  return column;
+}
+
+function disabledControls() {
+  return el('div', { class: 'pointer-events-auto' }, [
+    el(
+      'button',
+      {
+        type: 'button',
+        disabled: true,
+        class:
+          'un-touch-target flex h-11 items-center gap-1.5 rounded-pill border border-line bg-surface px-3 text-xs font-medium text-muted shadow-sm disabled:cursor-not-allowed disabled:opacity-70',
+        title: 'Coming soon',
+        dataset: { mapControl: 'layers' },
+      },
+      [el('span', { text: 'Map layers' })],
+    ),
+  ]);
+}
+
+// ── attribution ──────────────────────────────────────────────────────────
+
+function renderAttribution(node, text) {
+  if (!node) return;
+  const parts = attributionParts(text);
+  const children = [el('span', { text: 'Map data: ' })];
+  parts.forEach((part, i) => {
+    if (i > 0) children.push(document.createTextNode(' · '));
+    children.push(
+      part.href
+        ? el('a', { href: part.href, target: '_blank', rel: 'noopener noreferrer', text: part.label })
+        : el('span', { text: part.label }),
+    );
+  });
+  children.push(document.createTextNode(' · '));
+  children.push(
+    el('a', {
+      href: rendererLink(),
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      text: 'MapLibre',
+    }),
+  );
+  node.replaceChildren(...children);
+}
+
+// ── user location ────────────────────────────────────────────────────────
+
+// The permission flow is exact. Ask at the moment of need (the tap), never at
+// startup. Distinguish a denial from an ordinary failure, and never tell
+// someone to check a permission they were never asked for.
+async function requestLocation(service, view) {
+  const usernode = window.usernode;
+
+  if (!usernode || typeof usernode.requestPermission !== 'function') {
+    // Standalone (no platform shell): a permission request would reject the
+    // same way a denial does, so say the platform is needed instead of
+    // pretending the user said no.
+    toast('Open Homeroom Maps inside Homeroom to use your location.', { error: true });
+    return;
+  }
+
+  let result;
+  try {
+    result = await usernode.requestPermission('geolocation');
+  } catch (err) {
+    toast('We could not ask for your location. Please try again.', { error: true });
+    return;
+  }
+
+  if (!result || result.state !== 'granted') {
+    // `declined` is the person saying no; `not_declared` would mean our
+    // manifest is wrong (a bug). Either way the map stays usable.
+    const message =
+      result && result.reason === 'declined'
+        ? 'Location access was declined. The map still works without it.'
+        : 'Your location is not available to the app. The map still works without it.';
+    showNote(view, message);
+    toast(message, { error: true });
+    return;
+  }
+
+  if (result.active === false) {
+    // Granted, and the shell is about to reload this frame to apply the
+    // policy. Stop here: calling the geolocation API now would fail.
+    toast('Location enabled. Homeroom Maps will reopen to finish.', {});
+    return;
+  }
+
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    toast('This device cannot provide a location.', { error: true });
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const { latitude, longitude, accuracy } = position.coords;
+      service.setUserLocation({ lat: latitude, lng: longitude, accuracy });
+      service.centerOn({ lat: latitude, lng: longitude }, 14);
+      showNote(
+        view,
+        typeof accuracy === 'number' && accuracy > 0
+          ? `Showing your location (accurate to about ${Math.round(accuracy)} m).`
+          : 'Showing your location.',
+      );
     },
-    [label],
+    (err) => {
+      // A PERMISSION_DENIED here is ambiguous: it is also what a rejected
+      // promise from an undelegated capability carries, which looks identical
+      // to a person tapping block. hasCapability reads this document's own
+      // policy, so it separates "never asked / not delegated" from a genuine
+      // denial and we never tell someone to check a permission they were
+      // never asked for. Anything else (POSITION_UNAVAILABLE, a timeout) is
+      // "location unavailable".
+      const denied = err && err.code === err.PERMISSION_DENIED;
+      const documentHolds = typeof window.usernode?.hasCapability === 'function'
+        && window.usernode.hasCapability('geolocation');
+      const message = denied && documentHolds
+        ? 'Location access was denied. The map still works without it.'
+        : 'We could not determine your location right now. Please try again.';
+      showNote(view, message);
+      toast(message, { error: true });
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
   );
 }
+
+function showNote(view, message) {
+  view.note.style.display = '';
+  view.note.textContent = message;
+}
+
+function toast(message, { error = false } = {}) {
+  const kit = window.unNative;
+  if (kit && typeof kit.toast === 'function') {
+    try {
+      kit.toast(message, error ? { error: true } : {});
+      return;
+    } catch {
+      /* fall through to a console note */
+    }
+  }
+  console.info('[map] ' + message);
+}
+
+// ── lifecycle ────────────────────────────────────────────────────────────
+
+// The state lives in the query string, but this app hash-routes, so the
+// declared check path carries it after the `#` (`/#/?map=unconfigured`). Read
+// both so the demo route works however it is linked.
+function demoState() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('map');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('map');
+    }
+  } catch {
+    /* no URL, no demo state */
+  }
+  return value === 'unconfigured' || value === 'unsupported' ? value : null;
+}
+
+// Swap the basemap style when the platform theme changes, keeping the camera
+// where it is. The renderer preserves camera position across setStyle.
+window.addEventListener('usernode:theme-changed', () => {
+  if (!activeService) return;
+  const config = activeService.currentConfig();
+  if (!config || !config.styleUrlDark) return;
+  const dark = document.documentElement.classList.contains('dark');
+  activeService.setStyle(dark ? config.styleUrlDark : config.styleUrl);
+});
