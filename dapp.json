@@ -13,6 +13,12 @@
       "description": "Base URL of the Photon instance. Defaults to the public demo server; point it at a self-hosted instance to scale past its soft limits.",
       "required": false,
       "default": "https://photon.komoot.io"
+    },
+    {
+      "key": "COMMUNITY_REVIEWERS",
+      "description": "Comma-separated Homeroom usernames who may review community proposals (start review, accept, reject, mark implemented). Leave empty until reviewers are chosen; nobody can review while it is empty.",
+      "required": false,
+      "default": ""
     }
   ],
   "visibility": {
@@ -68,6 +74,44 @@
       "name": "Community opens",
       "path": "/#/community",
       "expectText": "Proposals"
+    },
+    {
+      "id": "community.feed",
+      "name": "Community feed lists proposals",
+      "path": "/#/community",
+      "expectSelector": "[data-community-feed][data-feed-state=\"ready\"] [data-proposal-row]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/community.js",
+        "public/js/components/community/**",
+        "public/js/services/community*.js",
+        "community/**"
+      ]
+    },
+    {
+      "name": "Community Popular ranks open proposals by votes",
+      "path": "/#/community?view=popular",
+      "expectText": "Staging demo: ferry pier pin is too far east"
+    },
+    {
+      "name": "Community Implemented view",
+      "path": "/#/community?view=implemented",
+      "expectText": "Staging demo: show cycle paths more clearly"
+    },
+    {
+      "name": "Community Nearby asks for a location first",
+      "path": "/#/community?view=nearby",
+      "expectText": "See proposals near you"
+    },
+    {
+      "name": "Community Yours is empty for a new visitor",
+      "path": "/#/community?view=mine",
+      "expectText": "You have not proposed anything yet"
+    },
+    {
+      "name": "Community proposal detail opens with history",
+      "path": "/#/community?proposal=900004",
+      "expectSelector": "[data-proposal-detail=\"900004\"] [data-history]"
     },
     {
       "name": "Profile opens",

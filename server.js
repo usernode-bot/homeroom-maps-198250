@@ -10,13 +10,28 @@ const {
   APP_AUDIENCE,
   PUBLIC_DIR,
   resolveMapConfig,
+  COMMUNITY_REVIEWERS,
 } = require('./config');
 const searchApi = require('./search');
+const { createPolicies } = require('./community/policies');
+const { createStore } = require('./community/store');
+const { createCommunityRouter } = require('./community/routes');
+const { parseReviewers } = require('./community/model');
 const { firstAcceptLanguage } = require('./search/normalize');
 
 const app = express();
 const port = PORT;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// Community core: proposals, votes and their status history. `policies` is
+// the (deliberately empty) registry where moderation, spam, duplicate and
+// reputation systems plug in later; see community/policies.js.
+const communityPolicies = createPolicies();
+const communityStore = createStore({
+  pool,
+  policies: communityPolicies,
+  platformOrigin: PLATFORM_ORIGIN,
+});
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -129,7 +144,7 @@ app.get('/api/config', (_req, res) => {
       map: Boolean(map.configured),
       search: true,
       directions: false,
-      communityVoting: false,
+      communityVoting: true,
       ai: false,
       traffic: false,
       offline: false,
@@ -194,14 +209,18 @@ async function handleSearch(req, res, mode) {
 app.get('/api/search/suggest', (req, res) => handleSearch(req, res, 'suggest'));
 app.get('/api/search', (req, res) => handleSearch(req, res, 'search'));
 
-// Deferred API surface for later stages (Phase 0 ships no map, directions or
-// community backend; /api/search is now real). A request to any of these
+app.use(
+  '/api/community',
+  createCommunityRouter({ store: communityStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
+);
+
+// Deferred API surface for later stages (Phase 0 ships no map or directions
+// backend; /api/search and /api/community are now real). A request to any of these
 // answers a clear, honest 501 rather than a fabricated result, so no screen
 // can mistake a stub for working functionality.
 const NOT_IMPLEMENTED = [
   '/api/places',
   '/api/directions',
-  '/api/community',
   '/api/saved',
 ];
 for (const prefix of NOT_IMPLEMENTED) {
@@ -276,10 +295,12 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
-  // No boot migration this stage. Phase 0 creates no tables: the community,
-  // place and map tables arrive with their features in later stages. The
+  // Idempotent boot migration: the community tables (all staging:private).
+  // Place and map tables arrive with their features in later stages. The
   // starter template's `presses` table is intentionally NOT created here (a
   // database that already has it keeps it; nothing drops it).
+  await communityStore.migrate();
+  if (IS_STAGING) await communityStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

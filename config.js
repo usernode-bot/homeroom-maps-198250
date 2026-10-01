@@ -142,6 +142,12 @@ const PHOTON_URL = (process.env.PHOTON_URL || 'https://photon.komoot.io')
 const PELIAS_URL = (process.env.PELIAS_URL || '').trim().replace(/\/+$/, '');
 const PELIAS_API_KEY = (process.env.PELIAS_API_KEY || '').trim();
 
+// Community reviewers: comma-separated platform usernames allowed to move
+// proposals through review (Under Review, Accepted, Rejected, Implemented).
+// Declared in dapp.json (required: false). Unset means nobody can review yet,
+// in staging and production alike; the role is never granted by environment.
+const COMMUNITY_REVIEWERS = process.env.COMMUNITY_REVIEWERS || '';
+
 module.exports = {
   IS_STAGING,
   PORT,
@@ -155,4 +161,5 @@ module.exports = {
   PHOTON_URL,
   PELIAS_URL,
   PELIAS_API_KEY,
+  COMMUNITY_REVIEWERS,
 };
