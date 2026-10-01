@@ -2,10 +2,15 @@
 
 A global map and location platform, built together with its community.
 
-> **Phase 0 (foundation), Phase 1 (world map), Phase 2 (global search) and
-> Phase 5 (community core: proposals and voting) are in place.** Directions,
-> navigation, AI and the rest of the community tools (reports, contributions,
-> discussions) are not built yet and are clearly labelled placeholders.
+> **Phase 0 (foundation), Phase 1 (world map), Phase 2 (global search),
+> Phase 3 (Places) and Phase 5 (community core: proposals and voting) are in
+> place.** The app shell, navigation, theme, shared UI, worldwide place
+> search, the Places model/card/detail views and the community proposal and
+> voting system all work. Directions, navigation, AI and the rest of the
+> community tools (reports, contributions, discussions) are not built yet
+> and are clearly labelled placeholders. `/api/config` reports
+> `mapProvider: null`: the map frame exists but no map provider is connected
+> yet, so nothing here is a working map.
 
 ## What exists today
 
@@ -50,9 +55,22 @@ A global map and location platform, built together with its community.
   proposals through review. Moderation, spam prevention, duplicate detection
   and reputation are extension points in `community/policies.js` with
   nothing registered: the app does not claim to do any of them yet.
+- **Places (Phase 3)** — a normalized, provider-independent Place model
+  (`places/place.js` on the server, `public/js/services/places-model.js` on
+  the client), a PlaceService over a PlaceProvider abstraction
+  (`places/index.js`), one reusable Place Card, and a Place Detail view on
+  the Discover screen reached through the documented Search→Places
+  interface. No place-data provider is connected yet (`placeProvider: null`
+  from `/api/config`, `PLACE_PROVIDER` unset): every per-place field the
+  search data does not carry renders an honest "Not available" state, and
+  `/api/places*` answers 501 rather than serving fabricated POI data. The
+  SavedPlacesAdapter interface (`public/js/services/saved.js`) is the same
+  kind of placeholder: the contract is defined, no adapter exists, no fake
+  saved data.
 - **Environment configuration** in `config.js`, plus `GET /api/config`
   (public, non-sensitive), `GET /api/me` (the signed-in person),
-  `GET /api/search` and `GET /api/search/suggest`.
+  `GET /api/search`, `GET /api/search/suggest`, `GET /api/places` and
+  `GET /api/places/:id`.
 - **Error boundary and loading states** — a screen that throws shows the
   shared error state with a Try again action; fetches show a skeleton.
 - **Service interfaces** for the later stages (`public/js/services/*`),
@@ -67,12 +85,13 @@ A global map and location platform, built together with its community.
 
 Map canvas, "Search this area" / "Nearby" controls (the search service
 already accepts a map area and a location with a radius; only the
-map-anchored UI is missing), points-of-interest browsing, routing and
-navigation, traffic, public transit, offline maps, saved places, trip
-planning, location sharing, the AI assistant, and the community features
-after proposals and voting (reports, contributions, discussions). The Home map frame
-and the two map controls are disabled placeholders; `/api/config` reports
-`mapProvider: null`.
+map-anchored UI is missing), points-of-interest browsing from a dedicated
+place-data provider, routing and navigation, traffic, public transit,
+offline maps, saved places, trip planning, location sharing, the AI
+assistant, and the community features after proposals and voting (reports,
+contributions, discussions). The Home map frame and the two map controls are
+disabled placeholders; `/api/config` reports `mapProvider: null` and
+`placeProvider: null`.
 
 ## Stack
 
