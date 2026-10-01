@@ -1,4 +1,8 @@
 {
   "description": "Imagine an app that, upon opening, instantly displays an interactive world map.",
-  "secrets": []
+  "secrets": [],
+  "visibility": {
+    "build": "private",
+    "view": "private"
+  }
 }
