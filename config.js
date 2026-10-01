@@ -38,6 +38,92 @@ const APP_AUDIENCE = process.env.USERNODE_APP_ID
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
+// ── Map configuration ─────────────────────────────────────────────────────
+// The map's data source is configuration, never code. A keyless default keeps
+// this phase free of keys and tokens: a host changes the source by setting the
+// environment (MAP_PROVIDER, MAP_STYLE_URL), and a future keyed provider is a
+// new preset here plus a dapp.json entry, not a source edit.
+const MAP_PROVIDER = process.env.MAP_PROVIDER || 'maplibre-openfreemap';
+
+// The attribution shown for any source whose own required string is not yet
+// written: OpenStreetMap data underlies every candidate source, so naming it
+// alone is the truthful minimum.
+const BASELINE_ATTRIBUTION = 'OpenStreetMap';
+
+// Provider name -> the public map configuration it resolves to. `provider` is
+// the adapter key the client registry uses; everything else is what GET
+// /api/config prints. Only values safe to print in a browser belong here.
+const MAP_PROVIDER_PRESETS = {
+  'maplibre-openfreemap': {
+    provider: 'maplibre',
+    label: 'OpenFreeMap',
+    styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
+    styleUrlDark: null,
+    attribution: 'OpenFreeMap, OpenMapTiles, OpenStreetMap',
+    requiresKey: false,
+  },
+};
+
+// Resolve the public map block. When MAP_PROVIDER names no known preset the
+// map is not configured: `mapProvider` is null and nothing but the baseline
+// attribution is advertised, so the client renders the not-configured frame
+// instead of a broken map.
+function resolveMapConfig() {
+  const preset = MAP_PROVIDER_PRESETS[MAP_PROVIDER];
+  if (!preset) {
+    return {
+      mapProvider: null,
+      map: {
+        configured: false,
+        provider: null,
+        label: null,
+        styleUrl: null,
+        styleUrlDark: null,
+        attribution: BASELINE_ATTRIBUTION,
+        requiresKey: false,
+        capabilities: {
+          rotation: false,
+          touchGestures: false,
+          accuracyCircle: false,
+          offline: false,
+          traffic: false,
+          geocoding: false,
+          routing: false,
+        },
+      },
+    };
+  }
+  // A browser map key is only read when the selected provider needs one; the
+  // keyless default reads nothing. A keyed provider's key is a browser-visible
+  // value served through /api/config like any other public value, never a
+  // server-only secret exposed to the page.
+  const token = preset.requiresKey ? process.env.MAP_TILE_TOKEN || '' : null;
+  return {
+    mapProvider: MAP_PROVIDER,
+    map: {
+      configured: true,
+      provider: preset.provider,
+      label: preset.label,
+      styleUrl: process.env.MAP_STYLE_URL || preset.styleUrl,
+      styleUrlDark: process.env.MAP_STYLE_URL_DARK || preset.styleUrlDark || null,
+      attribution: preset.attribution,
+      requiresKey: preset.requiresKey,
+      // Only the capability flags, never the key itself, decide which
+      // controls appear client-side.
+      capabilities: {
+        rotation: true,
+        touchGestures: true,
+        accuracyCircle: true,
+        offline: false,
+        traffic: false,
+        geocoding: false,
+        routing: false,
+      },
+      ...(token ? { token } : {}),
+    },
+  };
+}
+
 // Search provider configuration. `SEARCH_PROVIDER` names the adapter the
 // search service uses (see search/providers/); it defaults to Photon, which
 // needs no key and no billing, so the app works out of the box and staging
@@ -83,6 +169,8 @@ module.exports = {
   JWT_PUBLIC_KEY,
   APP_AUDIENCE,
   PUBLIC_DIR,
+  MAP_PROVIDER,
+  resolveMapConfig,
   SEARCH_PROVIDER,
   PHOTON_URL,
   PELIAS_URL,

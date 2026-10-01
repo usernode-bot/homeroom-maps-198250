@@ -14,6 +14,10 @@ module.exports = {
   content: [
     './public/**/*.html',
     './public/**/*.js',
+    // The vendored map renderer is a megabyte of minified library code that
+    // declares none of this app's classes; scanning it on every build only
+    // slows the extractor down.
+    '!./public/vendor/**',
   ],
 
   // Classes this app builds dynamically (if it ever does) go here, since the

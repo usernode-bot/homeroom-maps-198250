@@ -24,6 +24,9 @@ COPY --chown=1000:1000 . .
 # After the source copy so the compiled stylesheet is not overwritten by the
 # source tree (which deliberately does not contain one).
 COPY --chown=1000:1000 --from=css /build/public/tailwind.css ./public/tailwind.css
+# The vendored map renderer, produced the same way (see build:map). It is a
+# build artifact and is not committed either.
+COPY --chown=1000:1000 --from=css /build/public/vendor ./public/vendor
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
