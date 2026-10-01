@@ -8,7 +8,8 @@
     "start": "node server.js",
     "build": "npm run build:css && npm run build:map",
     "build:css": "tailwindcss -c tailwind.config.js -i styles/tailwind-input.css -o public/tailwind.css --minify",
-    "build:map": "mkdir -p public/vendor/maplibre && cp node_modules/maplibre-gl/dist/maplibre-gl.js node_modules/maplibre-gl/dist/maplibre-gl.css node_modules/maplibre-gl/dist/LICENSE.txt public/vendor/maplibre/"
+    "build:map": "mkdir -p public/vendor/maplibre && cp node_modules/maplibre-gl/dist/maplibre-gl.js node_modules/maplibre-gl/dist/maplibre-gl.css node_modules/maplibre-gl/dist/LICENSE.txt public/vendor/maplibre/",
+    "test": "node --test \"tests/*.test.js\""
   },
   "dependencies": {
     "express": "^4.21.0",

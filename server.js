@@ -11,6 +11,8 @@ const {
   PUBLIC_DIR,
   resolveMapConfig,
 } = require('./config');
+const searchApi = require('./search');
+const { firstAcceptLanguage } = require('./search/normalize');
 
 const app = express();
 const port = PORT;
@@ -111,8 +113,10 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // only values safe to print in a browser. `mapProvider: null` is the explicit
 // signal that no map provider is connected; the `map` block carries the public
 // source details (style URLs, the exact attribution string) the client needs,
-// all resolved from the environment by config.js. Nothing here reads
-// dapp.json secrets, and the keyless default reads no key at all.
+// all resolved from the environment by config.js. `searchProvider` mirrors
+// it: the configured search adapter's name, or null while the active adapter
+// is a placeholder. Nothing here reads dapp.json secrets, and the keyless
+// default reads no key at all.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   res.json({
@@ -120,9 +124,10 @@ app.get('/api/config', (_req, res) => {
     environment: IS_STAGING ? 'staging' : 'production',
     mapProvider,
     map,
+    searchProvider: searchApi.activeProviderName(),
     features: {
       map: Boolean(map.configured),
-      search: false,
+      search: true,
       directions: false,
       communityVoting: false,
       ai: false,
@@ -143,13 +148,58 @@ app.get('/api/me', (req, res) => {
   });
 });
 
-// Deferred API surface for later stages (Phase 0 ships no map, search,
-// directions or community backend). A request to any of these answers a
-// clear, honest 501 rather than a fabricated result, so no screen can
-// mistake a stub for working functionality.
+// Search — the two read routes of the search service (search/index.js).
+// Both are GET under /api/, so the auth gate above covers them; the provider
+// key never leaves the server. The typed error codes from search/provider.js
+// map to HTTP statuses here and use the app's standard JSON error shape, so
+// the client's apiGet() turns them into typed ApiErrors for free.
+const SEARCH_ERROR_STATUS = {
+  invalid_query: 400,
+  not_configured: 501,
+  rate_limited: 429,
+};
+
+async function handleSearch(req, res, mode) {
+  try {
+    // Language resolution order per the spec: explicit query param, then the
+    // signed-in user's platform locale (JWT claim), then Accept-Language,
+    // then omit and let the provider default.
+    const lang =
+      req.query.lang ||
+      (req.user && req.user.locale) ||
+      firstAcceptLanguage(req.headers['accept-language']) ||
+      null;
+    const out = await searchApi.run(
+      mode,
+      {
+        q: req.query.q,
+        limit: req.query.limit,
+        bbox: req.query.bbox,
+        near: req.query.near,
+        radius: req.query.radius,
+        lang: req.query.lang,
+      },
+      { lang },
+    );
+    res.json(out);
+  } catch (err) {
+    const code = err && err.code ? err.code : 'provider_error';
+    console.warn(`[search:${mode}] ${code}: ` + (err && err.message));
+    res.status(SEARCH_ERROR_STATUS[code] || 502).json({
+      error: { code, message: (err && err.message) || 'Search failed.' },
+    });
+  }
+}
+
+app.get('/api/search/suggest', (req, res) => handleSearch(req, res, 'suggest'));
+app.get('/api/search', (req, res) => handleSearch(req, res, 'search'));
+
+// Deferred API surface for later stages (Phase 0 ships no map, directions or
+// community backend; /api/search is now real). A request to any of these
+// answers a clear, honest 501 rather than a fabricated result, so no screen
+// can mistake a stub for working functionality.
 const NOT_IMPLEMENTED = [
   '/api/places',
-  '/api/search',
   '/api/directions',
   '/api/community',
   '/api/saved',

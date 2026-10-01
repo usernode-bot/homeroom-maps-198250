@@ -124,6 +124,24 @@ function resolveMapConfig() {
   };
 }
 
+// Search provider configuration. `SEARCH_PROVIDER` names the adapter the
+// search service uses (see search/providers/); it defaults to Photon, which
+// needs no key and no billing, so the app works out of the box and staging
+// and production run the identical code path. `PHOTON_URL` and `PELIAS_URL`
+// let a self-hosted instance replace the public endpoints without a code
+// change. Both are declared in dapp.json (required: false) with these same
+// defaults; the API-key secrets for the commercial adapters are deliberately
+// NOT declared here — each gets declared in the same change that implements
+// its adapter, per the platform secrets convention.
+const SEARCH_PROVIDER = (process.env.SEARCH_PROVIDER || 'photon')
+  .trim()
+  .toLowerCase();
+const PHOTON_URL = (process.env.PHOTON_URL || 'https://photon.komoot.io')
+  .trim()
+  .replace(/\/+$/, '');
+const PELIAS_URL = (process.env.PELIAS_URL || '').trim().replace(/\/+$/, '');
+const PELIAS_API_KEY = (process.env.PELIAS_API_KEY || '').trim();
+
 module.exports = {
   IS_STAGING,
   PORT,
@@ -133,4 +151,8 @@ module.exports = {
   PUBLIC_DIR,
   MAP_PROVIDER,
   resolveMapConfig,
+  SEARCH_PROVIDER,
+  PHOTON_URL,
+  PELIAS_URL,
+  PELIAS_API_KEY,
 };

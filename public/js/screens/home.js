@@ -4,9 +4,15 @@
 // the app's existing components (the loading skeleton, the shared error state)
 // so nothing here invents new chrome.
 //
-// The search box, the Places panel and the disabled "Map layers" control stay
-// exactly as they were: this phase builds the map and leaves search,
-// directions, POI data and layers as labelled placeholders.
+// Search is live: typing queries the app's own search service (see
+// services/search.js), suggestions open in a panel below the input, a chosen
+// suggestion shows as the Selected place card.
+//
+// Deferred: "Search this area" and "Nearby" controls, and centering the map
+// on a selected search result. The search service already exposes
+// searchInView(bbox) and searchNear(lat, lon, km) and the server routes
+// accept them; only the map-anchored UI is missing. The disabled "Map
+// layers" control stays as a labelled placeholder.
 import { el } from '../components/dom.js';
 import { errorState } from '../components/error-state.js';
 import { loading } from '../components/loading.js';
@@ -16,12 +22,20 @@ import { createMapService } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
 import { mapControls } from '../map/controls.js';
+import { createSearchSession } from '../services/search.js';
+import { createSearchBar } from '../components/search/search-bar.js';
+import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 
 const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
 
 // The live map for the screen currently mounted. Torn down on the next render
 // so a navigation never leaves a WebGL context or tile poller behind.
 let activeService = null;
+
+// PLACEHOLDER(map-phase): the map adapter exists now, but centering it on a
+// selected search result and dropping a marker aren't wired yet — this hook
+// is the single seam for that.
+function focusSelectedPlace(_place) {}
 
 export async function render(ctx) {
   if (activeService) {
@@ -31,6 +45,58 @@ export async function render(ctx) {
 
   const mapConfig = (getState().config && getState().config.map) || null;
   const force = demoState();
+
+  const session = createSearchSession({ onSelect: focusSelectedPlace });
+
+  const bar = createSearchBar({
+    onInput: (value) => session.input(value),
+    onFocus: () => session.open(),
+    onBlur: (e) => {
+      // Closing on blur, unless focus moved into the panel (option clicks
+      // keep the input focused via mousedown preventDefault, so this only
+      // fires for genuinely outside targets like Tab or a click elsewhere).
+      if (!e.relatedTarget || !panel.root.contains(e.relatedTarget)) {
+        session.close();
+      }
+    },
+    onKeydown: (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        session.move(1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        session.move(-1);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const state = session.getState();
+        if (state.highlighted >= 0 && state.results[state.highlighted]) {
+          session.select(state.results[state.highlighted]);
+        } else {
+          session.commit();
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        session.escape();
+      }
+    },
+    onClear: () => {
+      session.clearInput();
+      bar.input.focus();
+    },
+  });
+
+  const panel = createSearchPanel({ session });
+
+  const selectedSlot = el('div', { class: 'contents', dataset: { selectedPlace: 'slot' } });
+
+  function sync(state) {
+    bar.update(state);
+    panel.update(state);
+    selectedSlot.replaceChildren(
+      state.selected ? selectedPlaceCard({ place: state.selected, onRemove: () => session.removeSelected() }) : [],
+    );
+  }
+  session.subscribe(sync);
 
   // The frame keeps ONE definite height across every state, so switching
   // between them never collapses or jumps the page and the renderer always has
@@ -95,20 +161,13 @@ export async function render(ctx) {
   ctx.content.replaceChildren(
     el('h1', { class: 'sr-only', text: 'Home' }),
 
-    // Search remains a placeholder: no geocoding or search service is wired.
-    el('div', { class: 'flex flex-col gap-1.5' }, [
-      el('div', { class: 'relative' }, [
-        el('input', {
-          type: 'search',
-          disabled: true,
-          placeholder: 'Search places',
-          'aria-label': 'Search places',
-          class:
-            'w-full rounded-pill border border-line bg-surface px-4 py-3 text-sm text-ink placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-70',
-        }),
-      ]),
-      el('p', { class: 'px-1 text-xs text-muted', text: 'Search coming soon' }),
+    // Live search area: the input, the results panel beneath it, and the
+    // Selected place card slot above the map frame.
+    el('div', { class: 'flex flex-col gap-1.5', dataset: { search: 'true' } }, [
+      bar.root,
+      panel.root,
     ]),
+    selectedSlot,
 
     container,
     note,
@@ -120,6 +179,8 @@ export async function render(ctx) {
         'Points of interest, saved places and map contributions are coming soon.',
     }),
   );
+
+  sync(session.getState());
 
   const config = mapConfig && mapConfig.configured
     ? mapConfig

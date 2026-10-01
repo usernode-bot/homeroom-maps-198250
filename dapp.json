@@ -1,7 +1,20 @@
 {
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
-  "secrets": [],
+  "secrets": [
+    {
+      "key": "SEARCH_PROVIDER",
+      "description": "Which search provider adapter to use (photon, nominatim, pelias, mapbox, google, here). Defaults to photon, which needs no key.",
+      "required": false,
+      "default": "photon"
+    },
+    {
+      "key": "PHOTON_URL",
+      "description": "Base URL of the Photon instance. Defaults to the public demo server; point it at a self-hosted instance to scale past its soft limits.",
+      "required": false,
+      "default": "https://photon.komoot.io"
+    }
+  ],
   "visibility": {
     "build": "private",
     "view": "public"
@@ -35,6 +48,11 @@
       "name": "Home map not-configured state",
       "path": "/#/?map=unconfigured",
       "expectText": "Map is not configured yet"
+    },
+    {
+      "name": "Search bar renders on Home",
+      "path": "/#/",
+      "expectSelector": "[data-search-input]"
     },
     {
       "name": "Discover opens",

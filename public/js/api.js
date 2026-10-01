@@ -31,11 +31,12 @@ function setPending(delta) {
   }
 }
 
-export async function apiGet(path) {
+export async function apiGet(path, { signal } = {}) {
   setPending(1);
   try {
     const res = await fetch(path, {
       headers: { Accept: 'application/json', ...authHeaders() },
+      signal,
     });
     let body = null;
     try {
@@ -52,6 +53,10 @@ export async function apiGet(path) {
     }
     return body;
   } catch (err) {
+    // An aborted request is the caller's own doing (superseded by a newer
+    // query), not a failure: rethrow it unchanged so the caller can ignore
+    // it instead of surfacing a network error.
+    if (err && (err.name === 'AbortError' || err.code === 'ABORT_ERR')) throw err;
     if (err instanceof ApiError) throw err;
     throw new ApiError('We could not reach the server.', {
       code: 'network_error',
