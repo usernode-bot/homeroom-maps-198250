@@ -4,7 +4,7 @@
   "secrets": [],
   "visibility": {
     "build": "private",
-    "view": "private"
+    "view": "public"
   },
   "tests": [
     {
