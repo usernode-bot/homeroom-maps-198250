@@ -16,12 +16,14 @@ import * as discover from './screens/discover.js';
 import * as directions from './screens/directions.js';
 import * as community from './screens/community.js';
 import * as profile from './screens/profile.js';
+import * as saved from './screens/saved.js';
 
 router.register('home', home);
 router.register('discover', discover);
 router.register('directions', directions);
 router.register('community', community);
 router.register('profile', profile);
+router.register('saved', saved);
 
 const root = document.getElementById('app');
 let currentName = 'home';

@@ -205,9 +205,9 @@ function ratingSection(place) {
   ]);
 }
 
-export function createPlaceDetailView({ session, onBack }) {
+export function createPlaceDetailView({ session, onBack, onSave }) {
   const root = el('div', { class: 'flex flex-col gap-4', dataset: { placeDetail: 'true' } });
-  const backBtn = el('div', {}, [
+  const backRow = el('div', { class: 'flex items-center gap-2' }, [
     el(
       'button',
       {
@@ -218,9 +218,35 @@ export function createPlaceDetailView({ session, onBack }) {
       },
       ['Back'],
     ),
+    // Save: the caller decides whether this place can be saved (signed in,
+    // coordinates present); without onSave there is no button at all.
+    typeof onSave === 'function'
+      ? el(
+          'button',
+          {
+            type: 'button',
+            class:
+              'rounded-pill border border-line bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+            dataset: { placeDetailSave: 'true' },
+          },
+          ['Save'],
+        )
+      : null,
   ]);
-  backBtn.querySelector('[data-place-detail-back]').addEventListener('click', () => onBack && onBack());
-  root.appendChild(backBtn);
+  backRow.querySelector('[data-place-detail-back]').addEventListener('click', () => onBack && onBack());
+  const saveBtn = backRow.querySelector('[data-place-detail-save]');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      try {
+        await onSave(session.getState().place);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+  }
+  root.appendChild(backRow);
 
   function update(state) {
     const place = state.place || {};
@@ -258,7 +284,7 @@ export function createPlaceDetailView({ session, onBack }) {
     }
 
     root.replaceChildren(
-      backBtn,
+      backRow,
       header,
       ...strips,
       photosSection(place),

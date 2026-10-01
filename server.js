@@ -17,9 +17,14 @@ const { createPolicies } = require('./community/policies');
 const { createStore } = require('./community/store');
 const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
-const placesApi = require('./places');
+const places = require('./places');
+// The routes below need the bound service (createPlaceService), not the
+// module itself — the module only exports the factory and the pure helpers.
+const placesApi = places.createPlaceService();
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
+const { createStore: createSavedStore } = require('./saved/store');
+const { createSavedRouter } = require('./saved/routes');
 
 const app = express();
 const port = PORT;
@@ -34,6 +39,10 @@ const communityStore = createStore({
   policies: communityPolicies,
   platformOrigin: PLATFORM_ORIGIN,
 });
+
+// Saved places: lists, their places, suggestions and comments. Every table
+// is staging:private and every visibility check lives in saved/model.js.
+const savedStore = createSavedStore({ pool });
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -148,12 +157,13 @@ app.get('/api/config', (_req, res) => {
     map,
     searchProvider: searchApi.activeProviderName(),
     routing,
-    placeProvider: placesApi.activeProviderName(),
+    placeProvider: places.activeProviderName(),
     features: {
       map: Boolean(map.configured),
       search: true,
       directions: Boolean(routing.configured),
       communityVoting: true,
+      savedPlaces: true,
       ai: false,
       traffic: false,
       offline: false,
@@ -258,6 +268,11 @@ app.use(
   createCommunityRouter({ store: communityStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
 );
 
+// Saved places — the read and write routes of the saved service (saved/).
+// Mounted like community: all routes sit behind the auth gate, so req.user
+// is always present, and visibility is enforced inside the store, not here.
+app.use('/api/saved', createSavedRouter({ store: savedStore }));
+
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
 // never leaves the server. The typed error codes from places/provider.js map
@@ -310,22 +325,10 @@ app.get('/api/places', (req, res) =>
 app.get('/api/places/:id', (req, res) =>
   handlePlaces(req, res, ({ lang }) => placesApi.getPlaceDetails(req.params.id, { lang })));
 
-// Deferred API surface for later stages (/api/search, /api/directions,
-// /api/community and /api/places are now real). A request to any of these
-// answers a clear, honest 501 rather than a fabricated result, so no screen
-// can mistake a stub for working functionality.
-const NOT_IMPLEMENTED = [
-  '/api/saved',
-];
-for (const prefix of NOT_IMPLEMENTED) {
-  app.all(prefix + '/*', notImplemented);
-  app.all(prefix, notImplemented);
-}
-function notImplemented(_req, res) {
-  res.status(501).json({
-    error: { code: 'not_implemented', message: 'This feature is not built yet.' },
-  });
-}
+// Deferred API surface: every stage's endpoint (/api/search, /api/directions,
+// /api/community, /api/places, /api/saved) is now real, so the honest-501
+// stub list this block used to keep is empty. A request to an unknown /api/*
+// path falls through to the JSON 404 below, never to the HTML shell.
 
 app.use(express.static(PUBLIC_DIR));
 
@@ -389,12 +392,17 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
-  // Idempotent boot migration: the community tables (all staging:private).
-  // Place and map tables arrive with their features in later stages. The
-  // starter template's `presses` table is intentionally NOT created here (a
-  // database that already has it keeps it; nothing drops it).
+  // Idempotent boot migration: the community and saved-places tables (all
+  // staging:private). Place and map tables arrive with their features in
+  // later stages. The starter template's `presses` table is intentionally
+  // NOT created here (a database that already has it keeps it; nothing
+  // drops it).
   await communityStore.migrate();
-  if (IS_STAGING) await communityStore.seedStaging();
+  await savedStore.migrate();
+  if (IS_STAGING) {
+    await communityStore.seedStaging();
+    await savedStore.seedStaging();
+  }
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

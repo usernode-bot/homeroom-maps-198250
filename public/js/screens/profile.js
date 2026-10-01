@@ -10,6 +10,7 @@
 // rebuilt in place on selection) and call only the i18n layer.
 import { el } from '../components/dom.js';
 import { card } from '../components/card.js';
+import { button } from '../components/button.js';
 import { emptyState } from '../components/empty-state.js';
 import { errorState } from '../components/error-state.js';
 import { placeholderPanel } from '../components/placeholder-panel.js';
@@ -86,15 +87,30 @@ export async function render(ctx) {
     themeCard(),
     languageCard(),
     unitsCard(),
-    placeholderPanel({
-      title: t('profile.savedTitle'),
-      description: t('profile.savedBody'),
-    }),
+    savedCard(),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
     }),
   );
+}
+
+// Saved places — a real screen now (#/saved), so this card links to it
+// instead of sitting in a placeholder panel.
+function savedCard() {
+  return card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.savedTitle') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.savedBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('profile.savedOpen'), {
+        variant: 'secondary',
+        onClick: () => { window.location.hash = '#/saved'; },
+      }),
+    ]),
+  ]);
 }
 
 function themeCard() {
