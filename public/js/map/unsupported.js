@@ -24,6 +24,8 @@ export function createUnsupportedAdapter({ kind, reason }) {
     setStyle() {},
     setUserLocation() {},
     setRoutes() {},
+    setMarkers() {},
+    setReports() {},
     fitBounds() {},
     destroy() {},
   };

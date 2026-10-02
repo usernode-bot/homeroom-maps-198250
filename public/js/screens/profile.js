@@ -1,22 +1,22 @@
-// Profile — the one tab with something real to do this stage: it shows who is
-// signed in, explains that sign-in is handled by Homeroom, and offers the
-// theme, language and units preferences. If the identity fetch fails, the
-// screen stays usable: the preference controls and the placeholders still
-// render, and the identity area shows the shared error state with a Try again
-// action.
+// Profile — who is signed in, what they have contributed, and the app's
+// preferences. If the identity fetch fails, the screen stays usable: the
+// preference controls still render, and the identity area shows the shared
+// error state with a Try again action.
 //
-// The Language and Units cards are Phase 9's only change here: they follow the
-// Appearance card's pattern exactly (same card, same segmented pill group,
-// rebuilt in place on selection) and call only the i18n layer.
+// Phase 7 added an Activity card (the person's own contribution, proposal and
+// vote counts, read from /api/profile) and a Saved places card linking into
+// the Saved screen. No existing card was rewritten; the Language
+// and Units cards remain Phase 9's.
 import { el } from '../components/dom.js';
 import { card } from '../components/card.js';
 import { button } from '../components/button.js';
 import { emptyState } from '../components/empty-state.js';
 import { errorState } from '../components/error-state.js';
-import { placeholderPanel } from '../components/placeholder-panel.js';
+import { spinner } from '../components/loading.js';
 import { setState } from '../state.js';
-import { fetchMe } from '../api.js';
+import { fetchMe, apiGet } from '../api.js';
 import { hasToken } from '../auth.js';
+import * as router from '../router.js';
 import { getThemePreference, setThemePreference } from '../theme.js';
 import {
   t,
@@ -84,10 +84,14 @@ export async function render(ctx) {
             text: signedOut ? t('profile.signedOutNote') : t('profile.signedInNote'),
           }),
         ]),
+    // Phase 7: real activity, loaded from the server. Skipped entirely when
+    // there is nobody signed in.
+    ...(signedOut || loadError ? [] : profileCards()),
     themeCard(),
     languageCard(),
     unitsCard(),
     savedCard(),
+    tripsCard(),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
@@ -110,6 +114,79 @@ function savedCard() {
         onClick: () => { window.location.hash = '#/saved'; },
       }),
     ]),
+  ]);
+}
+
+// Trips — the Phase 10 trip planner entry. There is deliberately no sixth
+// bottom-nav tab: this card is the route in, and #/trips is deep-linkable.
+function tripsCard() {
+  const c = card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('nav.trips') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.tripsBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('trips.open'), {
+        variant: 'secondary',
+        attrs: { dataset: { openTrips: 'true' } },
+        onClick: () => router.navigate('trips'),
+      }),
+    ]),
+  ]);
+  return c;
+}
+
+// The Activity card is filled from /api/profile and owns its own loading and
+// error state.
+function profileCards() {
+  const request = apiGet('/api/profile');
+  return [activityCard(request)];
+}
+
+// The person's own activity: the real counts from /api/profile (their own
+// proposals — drafts included, since they are the author — and their votes).
+// Starts as a loading row and becomes either the counts or a short error line
+// with no invented numbers.
+function activityCard(request) {
+  const body = el('div', { class: 'mt-3 flex flex-col gap-2', dataset: { profileActivity: 'true' } }, [
+    loadingRow(),
+  ]);
+  const cardEl = card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.activity') }),
+  ]);
+  cardEl.appendChild(body);
+
+  request
+    .then((data) => {
+      const contributions = data && data.contributions ? data.contributions : {};
+      const votes = data && data.votes ? data.votes : {};
+      body.replaceChildren(
+        statRow(t('profile.proposals'), contributions.proposals || 0),
+        statRow(t('profile.implemented'), contributions.implemented || 0),
+        statRow(t('profile.votes'), votes.votes || 0),
+        el('p', { class: 'text-xs text-muted leading-relaxed', text: t('profile.activityBody') }),
+      );
+    })
+    .catch((err) => {
+      body.replaceChildren(
+        el('p', { class: 'text-sm text-muted', text: (err && err.message) || t('profile.activityError') }),
+      );
+    });
+  return cardEl;
+}
+
+function statRow(label, value) {
+  return el('div', { class: 'flex items-baseline justify-between gap-4' }, [
+    el('p', { class: 'text-sm text-muted', text: label }),
+    el('p', { class: 'text-sm font-semibold tabular-nums text-ink', text: String(value) }),
+  ]);
+}
+
+function loadingRow() {
+  return el('div', { class: 'flex items-center gap-3', role: 'status' }, [
+    spinner(),
+    el('p', { class: 'text-sm text-muted', text: t('common.loading') }),
   ]);
 }
 

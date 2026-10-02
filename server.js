@@ -17,14 +17,19 @@ const { createPolicies } = require('./community/policies');
 const { createStore } = require('./community/store');
 const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
+const { createReportsStore } = require('./reports/store');
+const { createReportsRouter } = require('./reports/routes');
 const places = require('./places');
 // The routes below need the bound service (createPlaceService), not the
 // module itself — the module only exports the factory and the pure helpers.
 const placesApi = places.createPlaceService();
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
+const { createStore: createTripStore } = require('./trips/store');
+const { createTripsRouter } = require('./trips/routes');
 const { createStore: createSavedStore } = require('./saved/store');
 const { createSavedRouter } = require('./saved/routes');
+const { createProfiles } = require('./saved/profiles');
 
 const app = express();
 const port = PORT;
@@ -40,9 +45,22 @@ const communityStore = createStore({
   platformOrigin: PLATFORM_ORIGIN,
 });
 
+// Trip & day planner (Phase 10): trips, their generated days and their
+// itinerary items. All three tables are staging:private, so staging starts
+// empty and the store seeds one fake demo trip there.
+const tripStore = createTripStore({ pool });
+
 // Saved places: lists, their places, suggestions and comments. Every table
 // is staging:private and every visibility check lives in saved/model.js.
 const savedStore = createSavedStore({ pool });
+// `profiles` reads the person's own proposals and votes out of the community
+// tables — read-only, no Phase 5 logic touched.
+const profiles = createProfiles({ pool });
+
+// Community reports (Phase 6): the same policies registry is shared with the
+// proposal store, so a moderation system plugged in there hears report
+// events too (report.flagged and friends).
+const reportsStore = createReportsStore({ pool, policies: communityPolicies });
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -182,6 +200,17 @@ app.get('/api/me', (req, res) => {
   });
 });
 
+// Profile (Phase 7) — the signed-in person's own contributions, proposals
+// and votes. Read-only, and scoped to the caller's own id, so it can only
+// ever describe the person asking. Saved lists live under /api/saved.
+app.get('/api/profile', async (req, res, next) => {
+  try {
+    res.json(await profiles.overview(String(req.user.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Search — the two read routes of the search service (search/index.js).
 // Both are GET under /api/, so the auth gate above covers them; the provider
 // key never leaves the server. The typed error codes from search/provider.js
@@ -272,6 +301,12 @@ app.use(
 // Mounted like community: all routes sit behind the auth gate, so req.user
 // is always present, and visibility is enforced inside the store, not here.
 app.use('/api/saved', createSavedRouter({ store: savedStore }));
+
+app.use('/api/trips', createTripsRouter({ store: tripStore, isStaging: IS_STAGING }));
+app.use(
+  '/api/reports',
+  createReportsRouter({ store: reportsStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
+);
 
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
@@ -393,6 +428,8 @@ app.get('*', (req, res) => {
 
 async function start() {
   // Idempotent boot migration: the community and saved-places tables (all
+  // staging:private), and the report tables (reports and
+  // report_status_events public, the reaction and flag tables
   // staging:private). Place and map tables arrive with their features in
   // later stages. The starter template's `presses` table is intentionally
   // NOT created here (a database that already has it keeps it; nothing
@@ -403,6 +440,10 @@ async function start() {
     await communityStore.seedStaging();
     await savedStore.seedStaging();
   }
+  await tripStore.migrate();
+  if (IS_STAGING) await tripStore.seedStaging();
+  await reportsStore.migrate();
+  if (IS_STAGING) await reportsStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

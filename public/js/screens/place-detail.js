@@ -22,7 +22,10 @@ import { icon } from '../components/icons.js';
 import { errorState } from '../components/error-state.js';
 import { spinner } from '../components/loading.js';
 import { createPlaceCard } from '../components/place/place-card.js';
+// Phase 7: saving a place from its detail view. Additive — the sections below
+// are untouched, and the button only ever reflects the server's real answer.
 import * as mapService from '../services/map.js';
+import { t } from '../i18n/index.js';
 import {
   NOT_AVAILABLE,
   openingHoursStatusLabel,
