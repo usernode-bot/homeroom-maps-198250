@@ -33,6 +33,7 @@ import {
 import {
   dayLabel,
   dayRange,
+  destinationBody,
   legPairs,
   legRequest,
   legLine,
@@ -166,16 +167,24 @@ function openForm({ trip = null, onSaved, onCancel } = {}) {
   const isEdit = Boolean(trip);
 
   const nameInput = inputEl({ value: trip ? trip.name : '', placeholder: t('trips.form.name') });
-  const destInput = inputEl({
-    value: trip && trip.destination ? trip.destination.name : '',
-    placeholder: t('trips.form.destination'),
-  });
-  // Coordinates are only carried when the destination is chosen through
-  // search; a hand-typed name keeps them null. Nothing is geocoded here.
-  let destinationCoordinates =
-    trip && trip.destination && trip.destination.lat != null
-      ? { lat: trip.destination.lat, lng: trip.destination.lng }
-      : null;
+
+  // Destination reuses the existing Phase 2/3 search + place-selection
+  // contract (the same createSearchBar + fetchSearch + placeFromSearchResult
+  // pair the add-place sheet uses). Only a real search result the user picks
+  // is stored, and only the coordinates that result carries: typed text is
+  // never geocoded and no coordinates are invented. Destination stays
+  // optional.
+  const destination = { current: null };
+  if (trip && trip.destination && trip.destination.name) {
+    destination.current = {
+      name: trip.destination.name,
+      coordinates:
+        trip.destination.lat != null && trip.destination.lng != null
+          ? { lat: trip.destination.lat, lon: trip.destination.lng }
+          : null,
+    };
+  }
+  const destinationSearch = createDestinationPicker(destination);
 
   const startInput = dateEl({ value: trip ? trip.startDate : todayIso() });
   const endInput = dateEl({ value: trip ? trip.endDate : addDaysIso(todayIso(), 1) });
@@ -195,9 +204,7 @@ function openForm({ trip = null, onSaved, onCancel } = {}) {
   save.addEventListener('click', async () => {
     const body = {
       name: nameInput.value,
-      destination: destInput.value.trim()
-        ? { name: destInput.value.trim(), ...(destinationCoordinates || {}) }
-        : null,
+      destination: destinationBody(destination.current),
       startDate: startInput.value,
       endDate: endInput.value,
     };
@@ -225,7 +232,7 @@ function openForm({ trip = null, onSaved, onCancel } = {}) {
         el('p', { class: 'text-base font-semibold text-ink', text: isEdit ? t('trips.form.editTitle') : t('trips.form.title') }),
         el('div', { class: 'mt-3 flex flex-col gap-3' }, [
           labelled(t('trips.form.name'), nameInput),
-          labelled(t('trips.form.destination'), destInput),
+          destinationSearch.root,
           el('p', { class: 'text-xs text-muted', text: t('trips.form.destinationHint') }),
           el('div', { class: 'flex gap-3' }, [
             el('div', { class: 'flex flex-1 flex-col gap-1' }, [labelled(t('trips.form.start'), startInput)]),
@@ -242,6 +249,146 @@ function openForm({ trip = null, onSaved, onCancel } = {}) {
   document.body.appendChild(overlay);
   nameInput.focus();
   return { close };
+}
+
+// The trip form's destination field: the same search-then-pick flow the
+// add-place sheet uses, so a destination is always a real search result (with
+// only the coordinates that result carries), never typed text turned into a
+// place. `picked` is a { current } box the form reads at save time; editing a
+// trip prefills the stored destination's name and lets the user re-pick.
+function createDestinationPicker(picked) {
+  const input = el('input', {
+    type: 'search',
+    dataset: { tripDestination: 'true' },
+    placeholder: t('trips.form.destinationPick'),
+    'aria-label': t('trips.form.destinationPick'),
+    class:
+      'w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+  });
+
+  const results = el('div', {
+    class: 'flex max-h-56 flex-col gap-1.5 overflow-y-auto',
+    dataset: { tripDestinationResults: 'true' },
+  });
+  const selected = el('div', { class: 'flex items-center gap-2 text-xs text-muted', dataset: { tripDestinationSelected: 'true' } });
+  const root = el('div', { class: 'relative flex flex-col gap-1.5' }, [input, results, selected]);
+
+  let controller = null;
+  let debounceTimer = null;
+  let generation = 0;
+
+  function syncSelected() {
+    input.value = picked.current ? picked.current.name : '';
+    const children = [
+      el('span', {
+        text: picked.current
+          ? t('trips.form.destinationSelected', { name: picked.current.name })
+          : t('trips.form.destinationNone'),
+      }),
+    ];
+    if (picked.current) {
+      children.push(
+        el('button', {
+          type: 'button',
+          class:
+            'rounded-pill px-2 py-0.5 text-xs font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+          dataset: { tripDestinationClear: 'true' },
+          text: t('trips.form.destinationClear'),
+          onClick: () => {
+            picked.current = null;
+            results.replaceChildren();
+            syncSelected();
+          },
+        }),
+      );
+    }
+    selected.replaceChildren(...children);
+  }
+
+  syncSelected();
+
+  function cancelPending() {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    if (controller) controller.abort();
+    controller = null;
+  }
+
+  function schedule(value) {
+    cancelPending();
+    const q = value.trim();
+    if (q.length < MIN_QUERY_LENGTH) {
+      results.replaceChildren();
+      return;
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      run(q);
+    }, DEBOUNCE_MS);
+  }
+
+  async function run(q) {
+    if (q.length < MIN_QUERY_LENGTH) return;
+    cancelPending();
+    generation += 1;
+    const gen = generation;
+    controller = new AbortController();
+    results.replaceChildren(el('div', { class: 'flex items-center justify-center py-2' }, [spinner()]));
+    try {
+      const rows = await fetchSearch(q, { signal: controller.signal });
+      if (gen !== generation) return;
+      const places = rows.map((r) => placeFromSearchResult(r)).filter(Boolean);
+      if (!places.length) {
+        results.replaceChildren(
+          el('p', { class: 'py-2 text-center text-xs text-muted', text: t('trips.form.destinationNoResults') }),
+        );
+        return;
+      }
+      results.replaceChildren(...places.map(destinationRow));
+    } catch (err) {
+      if (isAbort(err) || gen !== generation) return;
+      results.replaceChildren(
+        el('p', { class: 'py-2 text-center text-xs text-danger', text: err.message }),
+      );
+    }
+  }
+
+  function destinationRow(place) {
+    return el('button', {
+      type: 'button',
+      class:
+        'flex flex-col rounded-lg border border-line px-3 py-2 text-left hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+      dataset: { tripDestinationResult: place.id },
+      onClick: () => {
+        picked.current = {
+          name: place.name,
+          coordinates: place.coordinates
+            ? { lat: place.coordinates.lat, lon: place.coordinates.lon }
+            : null,
+        };
+        cancelPending();
+        results.replaceChildren();
+        syncSelected();
+      },
+    }, [
+      el('span', { class: 'truncate text-sm text-ink', text: place.name }),
+      place.address || place.category
+        ? el('span', { class: 'truncate text-xs text-muted', text: place.address || place.category })
+        : null,
+    ]);
+  }
+
+  input.addEventListener('input', () => schedule(input.value));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      run(input.value.trim());
+    }
+  });
+
+  return { root, input };
 }
 
 function inputEl({ value = '', placeholder = '' } = {}) {
@@ -833,7 +980,9 @@ async function renderDetail(ctx, { id, readOnly = false, demo = false }) {
 
   renderDays();
   await mountMap();
-  if (canRoute) loadLegs();
+  // Travel times are on demand only: no directions request is made just
+  // because the detail page was opened. The user taps "Show travel times"
+  // (or "Refresh travel times") to fetch them.
 }
 
 function tripRangeLabel(trip) {

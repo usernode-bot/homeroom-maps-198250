@@ -197,3 +197,17 @@ coreTest('legLine formats both halves and never invents a missing one', () => {
   });
   assert.equal(missing, 'Distance unavailable · Duration unavailable');
 });
+
+coreTest('destinationBody keeps only a picked result name and its own coordinates', async () => {
+  // Nothing chosen -> the destination stays optional (null), never a stub.
+  assert.equal(core.destinationBody(null), null);
+  assert.equal(core.destinationBody({}), null);
+  assert.equal(core.destinationBody({ name: '' }), null);
+  // A picked search result -> name plus the coordinates that result carried.
+  assert.deepEqual(
+    core.destinationBody({ name: 'Jakarta', coordinates: { lat: -6.2, lon: 106.8 } }),
+    { name: 'Jakarta', lat: -6.2, lng: 106.8 },
+  );
+  // A picked result with no coordinates -> name only; nothing is invented.
+  assert.deepEqual(core.destinationBody({ name: 'Nowhere' }), { name: 'Nowhere' });
+});

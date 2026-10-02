@@ -172,3 +172,16 @@ export function legLine(distance, duration, { locale, units, labels } = {}) {
   const time = duration == null ? '' : formatDuration(duration, { locale });
   return (d || copy.distance) + ' · ' + (time || copy.duration);
 }
+
+// The { name, lat?, lng? } body the trip API stores for a destination the
+// user picked from search, or null when none is chosen. Coordinates are the
+// selected result's own; typed text is never geocoded into a destination.
+export function destinationBody(current) {
+  if (!current || !current.name) return null;
+  const out = { name: current.name };
+  if (current.coordinates) {
+    out.lat = current.coordinates.lat;
+    out.lng = current.coordinates.lon;
+  }
+  return out;
+}
