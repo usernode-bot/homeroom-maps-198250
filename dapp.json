@@ -363,5 +363,11 @@
       "capability": "geolocation",
       "reason": "Shows your location on the map"
     }
-  ]
+  ],
+  "governance": {
+    "approvers": "anyone",
+    "approvals": {
+      "atLeast": 1
+    }
+  }
 }
