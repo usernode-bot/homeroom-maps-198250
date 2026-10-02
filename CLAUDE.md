@@ -101,3 +101,21 @@ shared understanding of what this app is for)_
   900001 and up; never seed rows or votes for the visitor.
 - Vote counts are never stored as counters; they are counted from
   `proposal_votes` on read.
+- `saved_lists`, `saved_places` and `saved_list_items` (Phase 7) are
+  **public**, deliberately not `staging:private`. They hold only real place
+  ids with the public display strings a person already saw in search (name,
+  address, category, coordinates) plus the list names they chose. Every query
+  filters on `user_id`, so another person opening a staging preview sees their
+  own saved-places surface, never this person's rows.
+- Saved places reference the REAL place id the search stack gives a result
+  (`search/normalize.js`). There is no second place model, and nothing
+  fabricates a place: a saved row carries only the display values that came
+  with the real result.
+- The four default saved lists are per-user rows with a stable `system_key`
+  (`favorites`, `want_to_visit`, `travel`, `restaurants`); the slug never
+  changes, so integrations keep working if a person renames the list. Custom
+  lists have no `system_key`, which is what lets the duplicate-prevention
+  indexes differ between the two kinds.
+- New user-facing strings go through the Phase 9 i18n layer: add the key to
+  both `public/js/i18n/locales/en.js` and `public/js/i18n/locales/id.js` and
+  call `t()` from the screen or component. English stays the fallback.

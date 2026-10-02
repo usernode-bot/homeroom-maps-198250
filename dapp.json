@@ -256,6 +256,58 @@
       "expectText": "Peta belum dikonfigurasi"
     },
     {
+      "id": "saved.lists",
+      "name": "Saved places screen renders the person's lists",
+      "path": "/#/saved",
+      "expectSelector": "[data-saved-host]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/saved.js",
+        "public/js/screens/place-detail.js",
+        "public/js/components/saved/**",
+        "public/js/components/place/**",
+        "public/js/app.js",
+        "public/js/services/saved.js",
+        "public/js/services/saved-places.js",
+        "public/js/router.js",
+        "public/js/i18n/**",
+        "saved/**"
+      ]
+    },
+    {
+      "name": "Saved places screen shows an honest empty state",
+      "path": "/#/saved",
+      "expectText": "Nothing saved yet"
+    },
+    {
+      "name": "A default saved list opens",
+      "path": "/#/saved?list=favorites",
+      "expectText": "Favorites"
+    },
+    {
+      "name": "Saved places copy in Indonesian",
+      "path": "/#/saved?lang=id",
+      "expectText": "Tempat tersimpan"
+    },
+    {
+      "id": "profile.activity",
+      "name": "Profile shows the person's real activity and saved count",
+      "path": "/#/profile",
+      "expectSelector": "[data-profile-activity]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/profile.js",
+        "public/js/i18n/**",
+        "saved/profiles.js",
+        "server.js"
+      ]
+    },
+    {
+      "name": "Profile activity card in Indonesian",
+      "path": "/#/profile?lang=id",
+      "expectText": "Aktivitas"
+    },
+    {
       "name": "Profile opens",
       "path": "/#/profile",
       "expectText": "Appearance"

@@ -22,7 +22,12 @@ import { icon } from '../components/icons.js';
 import { errorState } from '../components/error-state.js';
 import { spinner } from '../components/loading.js';
 import { createPlaceCard } from '../components/place/place-card.js';
+// Phase 7: saving a place from its detail view. Additive — the sections below
+// are untouched, and the button only ever reflects the server's real answer.
+import { createSaveButton } from '../components/place/save-button.js';
+import { openListPicker } from '../components/saved/list-picker.js';
 import * as mapService from '../services/map.js';
+import { t } from '../i18n/index.js';
 import {
   NOT_AVAILABLE,
   openingHoursStatusLabel,
@@ -222,6 +227,26 @@ export function createPlaceDetailView({ session, onBack }) {
   backBtn.querySelector('[data-place-detail-back]').addEventListener('click', () => onBack && onBack());
   root.appendChild(backBtn);
 
+  // The saved-place actions for THIS place. Built once from the session's
+  // place and re-appended on every update, so the button keeps its state
+  // across the loading -> ready transition instead of re-checking each time.
+  const initialPlace = session.getState().place || {};
+  const saveActions = el('div', { class: 'flex flex-wrap items-center gap-2', dataset: { placeSaveActions: 'true' } }, [
+    createSaveButton(initialPlace),
+    el(
+      'button',
+      {
+        type: 'button',
+        class:
+          'rounded-pill border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+        text: t('saved.addToLists'),
+        dataset: { placeAddToList: 'true' },
+        onClick: () => openListPicker({ place: initialPlace }),
+      },
+      [],
+    ),
+  ]);
+
   function update(state) {
     const place = state.place || {};
     const header = createPlaceCard(place, {});
@@ -259,6 +284,7 @@ export function createPlaceDetailView({ session, onBack }) {
 
     root.replaceChildren(
       backBtn,
+      saveActions,
       header,
       ...strips,
       photosSection(place),
