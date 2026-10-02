@@ -2,16 +2,18 @@
 
 A global map and location platform, built together with its community.
 
-> **Phases 0 to 9 are in place**, except where a phase is explicitly still a
+> **Phases 0 to 11 are in place**, except where a phase is explicitly still a
 > placeholder. The app shell, theme, shared UI, worldwide place search, the
 > Places model/card/detail views, directions and routing, community proposals
-> and voting, saved places and lists, navigation, and the English/Indonesian
-> i18n layer all work. Still not built, and clearly labelled as placeholders:
-> a connected map provider, a place-data provider, community reports and the
-> remaining community tools (contributions, discussions), AI, trip planning,
-> traffic, transit, offline maps and location sharing. `/api/config` reports
-> `mapProvider: null` and `placeProvider: null`: the map frame and the
-> per-place detail enrichment exist but no provider is connected yet.
+> and voting, saved places and lists, navigation, the English/Indonesian i18n
+> layer, trip planning and the AI map assistant all work. Still not built, and
+> clearly labelled as placeholders: a place-data provider, the remaining
+> community tools (contributions, discussions), traffic, transit, offline maps
+> and location sharing. `/api/config` reports the configured `mapProvider`
+> (the keyless MapLibre/OpenFreeMap default) and `placeProvider: null`: the
+> map frame is live, per-place detail enrichment still has no provider, and
+> `features.ai` follows the platform LLM proxy (on only when both proxy values
+> are present, which production has and staging does not).
 
 ## What exists today
 
@@ -88,17 +90,36 @@ A global map and location platform, built together with its community.
 - **Environment configuration** in `config.js`, plus `GET /api/config`
   (public, non-sensitive), `GET /api/me` (the signed-in person),
   `GET /api/search`, `GET /api/search/suggest`, `GET /api/places`,
-  `GET /api/places/:id`, the community routes under `/api/community/*`, and
-  the saved-places and profile routes under `/api/saved/*` and
-  `/api/profile`.
+  `GET /api/places/:id`, the community routes under `/api/community/*`, the
+  saved-places and profile routes under `/api/saved/*` and `/api/profile`, and
+  the assistant routes under `/api/assistant/*`.
+- **AI map assistant (Phase 11)** — an "Ask about the map" sheet on Home that
+  answers place, route, trip, saved-place and community questions by calling
+  read tools over the SAME services their screens use, so every fact in an
+  answer is grounded in a real tool result and nothing is invented. The only
+  AI path is the platform's LLM proxy, and it is enabled only when BOTH
+  `USERNODE_LLM_PROXY_URL` and `USERNODE_LLM_PROXY_TOKEN` are present (both
+  platform-injected, neither a third-party key, and staging has neither), so
+  `/api/config`'s `features.ai`, `/api/assistant/status.enabled` and the
+  surface itself all show an honest disabled state otherwise. `POST
+  /api/assistant/turn` returns an answer plus action PROPOSALS;
+  `POST /api/assistant/act` validates and normalizes one action and never
+  mutates domain data; every write goes through the EXISTING saved-places or
+  trips endpoint after an explicit confirmation. Map context is
+  client-side-only and non-authoritative. `?assistant=demo` (staging only) is
+  a deterministic, read-only canned transcript that calls no proxy, no `/act`
+  and no write endpoint. No new table and no migration: the transcript lives
+  in memory and nothing is persisted.
 - **Error boundary and loading states** — a screen that throws shows the
   shared error state with a Try again action; fetches show a skeleton.
 - **Service interfaces** (`public/js/services/*`) with real implementations
-  for search, places, routing, navigation, community and saved places, and
+  for search, places, routing, navigation, community, saved places, trips and
+  the assistant, and
   documented placeholders for the stages that are still unbuilt, so no screen
   can fake map or community behaviour.
 - **Tests** — `npm test` runs the whole suite (`node --test`): search,
-  places, i18n, routing, navigation, community and saved places. The Postgres
+  places, i18n, routing, navigation, community, saved places and the assistant.
+  The Postgres
   suites (community, saved places, profile) need a database:
   `TEST_DATABASE_URL` (or the build worker's `INLOOP_DATABASE_URL`); without
   one they are skipped.
@@ -108,11 +129,10 @@ A global map and location platform, built together with its community.
 Map canvas, "Search this area" / "Nearby" controls (the search service
 already accepts a map area and a location with a radius; only the
 map-anchored UI is missing), points-of-interest browsing from a dedicated
-place-data provider, traffic, public transit, offline maps, trip planning,
-location sharing, the AI assistant, and the community features after
-proposals and voting (reports, contributions, discussions). The Home map frame and the two map controls are
-disabled placeholders; `/api/config` reports `mapProvider: null` and
-`placeProvider: null`.
+place-data provider, traffic, public transit, offline maps and location
+sharing, and the community features after proposals and voting
+(contributions, discussions). The Home map frame is live; `/api/config`
+reports the configured `mapProvider` and `placeProvider: null`.
 
 ## Stack
 

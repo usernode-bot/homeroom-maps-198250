@@ -14,10 +14,10 @@
 // accept them; only the map-anchored UI is missing. The disabled "Map
 // layers" control stays as a labelled placeholder.
 import { el } from '../components/dom.js';
+import { button } from '../components/button.js';
 import { errorState } from '../components/error-state.js';
 import { loading } from '../components/loading.js';
 import { placeholderPanel } from '../components/placeholder-panel.js';
-import { getState } from '../state.js';
 import { createMapService } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
@@ -25,6 +25,12 @@ import { mapControls } from '../map/controls.js';
 import { createSearchSession } from '../services/search.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
+import { createAssistantPanel } from '../components/assistant/panel.js';
+import { present } from '../components/surface.js';
+import { createAssistant, mapContext, fetchStatus, normalizeAction } from '../services/assistant.js';
+import { savedPlaces } from '../services/saved-places.js';
+import { addItem as addTripItem } from '../services/trips.js';
+import { getState } from '../state.js';
 import { t } from '../i18n/index.js';
 import { formatDistance } from '../i18n/format.js';
 
@@ -160,6 +166,12 @@ export async function render(ctx) {
 
   container.append(surface, overlay, controls);
 
+  // A stable handle the assistant mount reads live map state from (bounds,
+  // centre, zoom) and uses to draw an assistant-proposed route. Only the
+  // adapter that is actually live is exposed; the demo/forced states leave it
+  // empty, so map context is honestly absent rather than guessed.
+  const viewRef = { service: null, demo: false };
+
   ctx.content.replaceChildren(
     el('h1', { class: 'sr-only', text: t('nav.home') }),
 
@@ -174,6 +186,8 @@ export async function render(ctx) {
     container,
     note,
     attribution,
+
+    assistantMount(session, viewRef),
 
     placeholderPanel({
       title: t('home.placesTitle'),
@@ -200,7 +214,7 @@ export async function render(ctx) {
   // what satisfies the data licence when tiles never arrive.
   renderAttribution(attribution, config.attribution || DEFAULT_ATTRIBUTION);
 
-  const view = { container, surface, overlay, controls, note };
+  const view = { container, surface, overlay, controls, note, viewRef };
 
   // A forced demo state short-circuits the real path only for the state it
   // names; every other route mounts the live adapter through the service.
@@ -219,6 +233,7 @@ function mountMap(view, config, force = null) {
     activeService.destroy();
     activeService = null;
   }
+  if (view && view.viewRef) view.viewRef.service = null;
   showOverlay(view, loading({ label: t('map.loading') }));
   const service = createMapService(config, {
     force,
@@ -237,6 +252,7 @@ function mountMap(view, config, force = null) {
 function onReady(service, view) {
   hideOverlay(view);
   view.controls.replaceChildren(liveControls(service, view));
+  view.viewRef.service = service;
 }
 
 function onFailure(service, view, err) {
@@ -464,6 +480,221 @@ function toast(message, { error = false } = {}) {
 }
 
 // ── lifecycle ────────────────────────────────────────────────────────────
+
+// ── AI assistant ─────────────────────────────────────────────────────────
+
+// The map context the assistant may send. It is built from the app's own live
+// map (bounds/centre/zoom) and the currently selected search place, and it is
+// labelled non-authoritative server-side: the assistant may use it to
+// understand the question but must never quote it as a fact. The adapter
+// exposes only centre/zoom, so the context carries a centre and zoom but no
+// bounding box (a tool, not a guess, would be needed for the box). Every
+// field is omitted when absent.
+function buildMapContext(viewRef, selected) {
+  const service = viewRef && viewRef.service;
+  // The adapter interface exposes centre/zoom only where a renderer provides
+  // them; the keyless MapLibre adapter does not, so these read as absent and
+  // the context simply omits them. Nothing is guessed.
+  const map = service && typeof service === 'object'
+    ? {
+        center: () => (typeof service.getCenter === 'function' ? service.getCenter() : null),
+        zoom: () => (typeof service.getZoom === 'function' ? service.getZoom() : null),
+      }
+    : null;
+  return mapContext({
+    route: window.location.hash || '#/',
+    map,
+    selectedPlace: selected || null,
+  });
+}
+
+// Confirm a WRITE action. Two steps, in order:
+//   1. Re-validate the action through POST /api/assistant/act, which re-checks
+//      the allowlist and the ownership precondition against the verified
+//      viewer. This is what stops a tampered client from executing an
+//      unlisted tool or another person's trip. /act mutates nothing.
+//   2. Issue the write through the EXISTING domain service: save goes to
+//      /api/saved/places (via savedPlaces.save), add-to-trip to
+//      /api/trips/.../items. No new write endpoint is introduced.
+async function confirmWrite(action) {
+  const answer = await normalizeAction(action);
+  const validated = answer && answer.action && answer.action.tool ? answer.action : action;
+  const args = (validated && validated.args) || {};
+  if (validated.tool === 'save_place') {
+    const place = args.place || {};
+    await savedPlaces.save(
+      {
+        id: place.id,
+        name: place.name,
+        category: place.category || null,
+        address: place.address || null,
+        coordinates: place.lat != null && place.lng != null ? { lat: place.lat, lon: place.lng } : null,
+        dataSource: 'assistant',
+      },
+      { list: args.listRef || 'favorites' },
+    );
+    return { notice: t('assistant.doneNote') };
+  }
+  if (validated.tool === 'add_trip_item') {
+    const place = args.place || {};
+    await addTripItem(
+      args.tripId,
+      args.dayId,
+      {
+        placeId: place.id,
+        placeSnapshot: {
+          name: place.name,
+          category: place.category || null,
+          address: place.address || null,
+          coordinates: place.lat != null && place.lng != null ? { lat: place.lat, lng: place.lng } : null,
+        },
+      },
+    );
+    return { notice: t('assistant.doneNote') };
+  }
+  return { notice: null };
+}
+
+// Navigate to a read-only view the assistant proposed. Both views already
+// accept a deep link; the assistant adds nothing that did not already exist.
+// A proposed route is drawn on the live map and fitted, without a write.
+function navigateForAssistant(nav, viewRef) {
+  if (!nav) return;
+  if (nav.kind === 'community') {
+    const q = new URLSearchParams();
+    if (nav.tab === 'reports') q.set('view', 'reports');
+    if (nav.view) q.set('view', nav.view);
+    const query = q.toString();
+    window.location.hash = '#/community' + (query ? '?' + query : '');
+    return;
+  }
+  if (nav.kind === 'route') {
+    const dest = nav.destination;
+    if (dest && Number.isFinite(Number(dest.lat)) && Number.isFinite(Number(dest.lng))) {
+      const name = dest.name || t('assistant.destinationFallback');
+      window.location.hash = '#/directions?to=' + encodeURIComponent(`${name},${dest.lat},${dest.lng}`);
+    }
+  }
+}
+
+function assistantMount(searchSession, viewRef) {
+  // Deep-link state for the assistant surface, read like demoState (both the
+  // URL query and the query after the hash). `demo` is the staging-only
+  // read-only mock; `unavailable` opens the honest disabled state.
+  const param = assistantParam();
+  const staging = (getState().config && getState().config.environment) === 'staging';
+  const demo = param === 'demo' && staging;
+  const openState = demo ? 'demo' : param === 'unavailable' ? 'unavailable' : null;
+  const wrapper = el('div', { class: 'flex flex-col', dataset: { assistantHost: 'true' } });
+  const openBtn = button(t('assistant.open'), {
+    variant: 'secondary',
+    attrs: { dataset: { assistantOpen: 'true' } },
+    onClick: () => openSheet(),
+  });
+  wrapper.append(openBtn);
+
+  let surface = null;
+  let panel = null;
+  let opened = false;
+
+  const session = createAssistant({
+    demo,
+    contextProvider: () => buildMapContext(viewRef, searchSession.getState().selected),
+    onNavigate: (nav) => navigateForAssistant(nav, viewRef),
+    confirm: confirmWrite,
+  });
+
+  function openSheet() {
+    if (opened) return;
+    opened = true;
+    panel = createAssistantPanel({
+      session,
+      demo,
+      onClose: () => surface && surface.dismiss(),
+    });
+    const body = el('div', { class: 'flex flex-col gap-3' }, []);
+    if (demo) {
+      body.append(
+        el('p', {
+          class: 'rounded-card border border-dashed border-line p-3 text-xs text-muted',
+          dataset: { assistantDemoBanner: 'true' },
+          text: t('assistant.demoBanner'),
+        }),
+      );
+    }
+    body.append(panel.root);
+    surface = present(body, { label: t('assistant.title'), onDismiss: () => { opened = false; session.close(); } });
+    panel.focus();
+
+    if (demo) {
+      // A fixed, canned transcript: no request, no proxy, no write. The
+      // confirm control is inert in this state.
+      session.deliver({
+        userText: 'Save Staging demo cafe',
+        reply: 'This is a demo of the map assistant. AI is unavailable in staging, so this preview is fixed and does not call the AI service.',
+        actions: [
+          {
+            tool: 'save_place',
+            summary: 'Save Staging demo cafe to favorites',
+            args: { place: { id: 'demo-place-1', name: 'Staging demo cafe' }, listRef: 'favorites' },
+          },
+        ],
+      });
+      session.open();
+      return;
+    }
+
+    // Real path. `features.ai` mirrors LLM_ENABLED and comes from the public,
+    // always-available /api/config, so the honest disabled state needs no
+    // gated call and never errors. Only when AI is enabled do we read the
+    // spend meter from the gated /api/assistant/status.
+    session.open();
+    const aiEnabled = Boolean(getState().config && getState().config.features && getState().config.features.ai);
+    if (!aiEnabled) {
+      session.markUnavailable();
+    } else {
+      fetchStatus()
+        .then((status) => {
+          if (!status || !status.enabled) session.markUnavailable();
+        })
+        .catch(() => session.markUnavailable());
+    }
+  }
+
+  // A deep link can boot straight into the sheet so a screenshot/check reaches
+  // it without an interaction.
+  if (openState) setTimeout(() => openSheet(), 0);
+
+  return wrapper;
+}
+
+// The assistant deep-link value ('demo' | 'unavailable'), read from the URL
+// query or the query after the hash, exactly like demoState reads ?map=.
+function assistantParam() {
+  let value = null;
+  let demo = null;
+  try {
+    const search = new URLSearchParams(window.location.search);
+    value = search.get('assistant');
+    demo = search.get('demo');
+    if (!value && !demo) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) {
+        const params = new URLSearchParams(hash.slice(q + 1));
+        value = params.get('assistant');
+        demo = params.get('demo');
+      }
+    }
+  } catch {
+    /* no URL, no assistant state */
+  }
+  if (value === 'unavailable') return 'unavailable';
+  // The platform's request-time demo convention: `?demo=1` (staging only,
+  // enforced by the caller) opens the read-only assistant transcript.
+  if (value === 'demo' || demo === '1') return 'demo';
+  return null;
+}
 
 // The state lives in the query string, but this app hash-routes, so the
 // declared check path carries it after the `#` (`/#/?map=unconfigured`). Read

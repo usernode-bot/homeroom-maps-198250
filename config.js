@@ -200,6 +200,19 @@ const PLACE_PROVIDER = (process.env.PLACE_PROVIDER || '')
   .trim()
   .toLowerCase();
 
+// ── AI assistant (Phase 11) ───────────────────────────────────────────────
+// The ONLY AI path is the platform's LLM proxy. Neither value below is a
+// third-party key: the platform injects both in production and injects
+// NEITHER in staging (unreviewed code must not be able to spend a user's
+// budget) or in a standalone deploy. The app is enabled only when BOTH are
+// present, which is deliberately stricter than the platform's minimal
+// example: a URL alone or a token alone is a misconfiguration, and the safe
+// direction is the honest unavailable state rather than a network error.
+// Neither value is declared in dapp.json; both are platform-injected.
+const LLM_PROXY_URL = (process.env.USERNODE_LLM_PROXY_URL || '').trim().replace(/\/+$/, '');
+const LLM_PROXY_TOKEN = (process.env.USERNODE_LLM_PROXY_TOKEN || '').trim();
+const LLM_ENABLED = Boolean(LLM_PROXY_URL && LLM_PROXY_TOKEN);
+
 module.exports = {
   IS_STAGING,
   PORT,
@@ -218,4 +231,7 @@ module.exports = {
   OSRM_PROFILES,
   COMMUNITY_REVIEWERS,
   PLACE_PROVIDER,
+  LLM_PROXY_URL,
+  LLM_PROXY_TOKEN,
+  LLM_ENABLED,
 };
