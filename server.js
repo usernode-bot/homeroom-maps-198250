@@ -17,6 +17,8 @@ const { createPolicies } = require('./community/policies');
 const { createStore } = require('./community/store');
 const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
+const { createReportsStore } = require('./reports/store');
+const { createReportsRouter } = require('./reports/routes');
 const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
@@ -34,6 +36,11 @@ const communityStore = createStore({
   policies: communityPolicies,
   platformOrigin: PLATFORM_ORIGIN,
 });
+
+// Community reports (Phase 6): the same policies registry is shared with the
+// proposal store, so a moderation system plugged in there hears report
+// events too (report.flagged and friends).
+const reportsStore = createReportsStore({ pool, policies: communityPolicies });
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -258,6 +265,11 @@ app.use(
   createCommunityRouter({ store: communityStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
 );
 
+app.use(
+  '/api/reports',
+  createReportsRouter({ store: reportsStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
+);
+
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
 // never leaves the server. The typed error codes from places/provider.js map
@@ -389,12 +401,16 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
-  // Idempotent boot migration: the community tables (all staging:private).
-  // Place and map tables arrive with their features in later stages. The
-  // starter template's `presses` table is intentionally NOT created here (a
-  // database that already has it keeps it; nothing drops it).
+  // Idempotent boot migration: the community tables (all staging:private)
+  // and the report tables (reports and report_status_events public, the
+  // reaction and flag tables staging:private). Place and map tables arrive
+  // with their features in later stages. The starter template's `presses`
+  // table is intentionally NOT created here (a database that already has it
+  // keeps it; nothing drops it).
   await communityStore.migrate();
   if (IS_STAGING) await communityStore.seedStaging();
+  await reportsStore.migrate();
+  if (IS_STAGING) await reportsStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
