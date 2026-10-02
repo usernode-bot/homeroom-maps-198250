@@ -3,7 +3,7 @@
   "description": "A global map and location platform built together with its community.",
   "icon": {
     "image": "brand/icon.png",
-    "emoji": "🗺️"
+    "emoji": "\ud83d\uddfa\ufe0f"
   },
   "secrets": [
     {
@@ -400,6 +400,35 @@
       "name": "Trips entry renders on Profile",
       "path": "/#/profile",
       "expectText": "Trips"
+    },
+    {
+      "name": "Assistant unavailable state on Home",
+      "path": "/#/?assistant=unavailable",
+      "expectText": "The assistant is not available"
+    },
+    {
+      "name": "Assistant open control in Indonesian",
+      "path": "/#/?lang=id",
+      "expectText": "Tanya tentang peta"
+    },
+    {
+      "id": "assistant.demo",
+      "name": "Assistant demo transcript renders a reply and a confirmation card",
+      "path": "/#/?demo=1",
+      "expectSelector": "[data-assistant-transcript] [data-assistant-message=\"assistant\"]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/home.js",
+        "public/js/components/assistant/**",
+        "public/js/services/assistant*.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "assistant/**",
+        "server.js",
+        "config.js"
+      ],
+      "allowConsoleErrors": true,
+      "expectText": "Save Staging demo cafe to favorites"
     }
   ],
   "permissions": [
@@ -407,5 +436,9 @@
       "capability": "geolocation",
       "reason": "Shows your location on the map"
     }
-  ]
+  ],
+  "llm": {
+    "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",
+    "suggested_daily_cap_cents": 200
+  }
 }
