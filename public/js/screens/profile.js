@@ -19,7 +19,6 @@ import { fetchMe, apiGet } from '../api.js';
 import { hasToken } from '../auth.js';
 import * as router from '../router.js';
 import { getThemePreference, setThemePreference } from '../theme.js';
-import * as router from '../router.js';
 import {
   t,
   getLanguagePreference,
