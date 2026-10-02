@@ -23,6 +23,10 @@
 //                                         clear them when passed null; data
 //                                         set before the style is ready is
 //                                         held and applied on load
+//   setReports([{ id, type, lat, lng, effectiveStatus }] | null)
+//                                      -> draw report pins (Community), or
+//                                         clear them when passed null; held
+//                                         and applied on load like routes
 //   fitBounds({ west, south, east, north }, opts?) -> fit the camera to a
 //                                         route's bounds (Directions)
 //   capabilities                       -> { rotation, touchGestures, accuracyCircle }
