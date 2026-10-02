@@ -9,15 +9,11 @@
 //     list(),           // -> array of saved places
 //   }
 //
-// PLACEHOLDER(adapter-phase): no adapter exists yet, so createSavedPlacesService()
-// without one returns the honest placeholder: every call throws
-// SavedPlacesUnavailableError (code not_configured). Deliberately no fake
-// saved data — a saved-places list the app invents would fabricate user
-// intent. The server route /api/saved answers 501 for the same reason.
-//
-// TODO(saved-phase): implement an adapter backed by a server table (the
-// platform's auth gate already covers /api/saved) or device-local storage,
-// and hand it to createSavedPlacesService(). Nothing else changes.
+// Phase 7 wired the server-backed adapter in (services/saved-places.js):
+// serverAdapter implements this contract over /api/saved and is passed to
+// createSavedPlacesService() there. The placeholder below is unchanged and
+// still returned when no adapter is supplied, so a screen that forgets to
+// wire one refuses honestly instead of inventing saved data.
 'use strict';
 
 export class SavedPlacesUnavailableError extends Error {

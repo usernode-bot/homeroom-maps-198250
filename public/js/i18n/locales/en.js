@@ -9,6 +9,7 @@ export default {
   'common.loading': 'Loading',
   'common.comingSoon': 'Coming soon',
   'common.tryAgain': 'Try again',
+  'common.cancel': 'Cancel',
 
   // navigation
   'nav.main': 'Main',
@@ -73,7 +74,7 @@ export default {
 
   // home
   'home.placesTitle': 'Places',
-  'home.placesBody': 'Points of interest, saved places and map contributions are coming soon.',
+  'home.placesBody': 'Points of interest, map contributions and saved places live in Discover and Profile.',
 
   // discover
   'discover.idleTitle': 'Find a place',
@@ -165,7 +166,67 @@ export default {
   'units.metric': 'Metric',
   'units.imperial': 'Imperial',
   'profile.savedTitle': 'Saved places',
-  'profile.savedBody': 'Saved places and trip planning are coming soon.',
+  'profile.savedCount': 'You have saved {count} places.',
+  'profile.savedCountOne': 'You have saved 1 place.',
+  'profile.openSaved': 'Open saved places',
+  'profile.activity': 'Activity',
+  'profile.activityBody': 'Counts are read from your own proposals and votes. They are never estimated.',
+  'profile.activityError': 'Your activity could not load right now.',
+  'profile.proposals': 'Proposals',
+  'profile.implemented': 'Implemented',
+  'profile.votes': 'Votes cast',
   'profile.moreSoonTitle': 'More soon',
-  'profile.moreSoonBody': 'Contribution history and notification settings will appear here.',
+  'profile.moreSoonBody': 'Notification settings will appear here.',
+
+  // saved places (Phase 7)
+  'saved.title': 'Saved places',
+  'saved.intro':
+    'Places you save stay here, in lists you control. Only you can see them.',
+  'saved.loading': 'Loading saved places',
+  'saved.loadError': 'Saved places could not load',
+  'saved.listsTitle': 'Lists',
+  'saved.placesTitle': 'All saved places',
+  'saved.newList': 'New list',
+  'saved.newListPlaceholder': 'For example: Weekend trips',
+  'saved.create': 'Create',
+  'saved.listName': 'List name',
+  'saved.rename': 'Rename',
+  'saved.delete': 'Delete',
+  'saved.saveChanges': 'Save changes',
+  'saved.backToLists': 'Back to lists',
+  'saved.itemOne': '1 place',
+  'saved.items': '{count} places',
+  'saved.customHint':
+    'The four built-in lists cannot be renamed or deleted. Your own lists can.',
+  'saved.defaultListNote': 'A built-in list that is always here.',
+  'saved.customListNote': 'One of your own lists.',
+  'saved.emptyTitle': 'Nothing saved yet',
+  'saved.emptyBody':
+    'Search for a place in Discover and tap Save. It will appear here and in your lists.',
+  'saved.listEmptyTitle': 'This list is empty',
+  'saved.listEmptyBody': 'Add a saved place to this list with Add to list.',
+  'saved.addToList': 'Add to list',
+  'saved.addToLists': 'Add to a list',
+  'saved.removeFromList': 'Remove from this list',
+  'saved.removedFromList': 'Removed from the list.',
+  'saved.listCreated': 'Created "{name}".',
+  'saved.listRenamed': 'List renamed.',
+  'saved.listDeleted': 'List deleted. The places in it are still saved.',
+  'saved.deleteConfirmTitle': 'Delete "{name}"?',
+  'saved.deleteConfirmBody':
+    'The list and its memberships are removed. The places themselves stay saved.',
+  'saved.updateError': 'That change could not be saved. Please try again.',
+  'saved.signedOutTitle': 'Open Homeroom Maps inside Homeroom',
+  'saved.signedOutBody': 'Saved places need your Homeroom sign-in.',
+  'saved.checking': 'Checking',
+  'saved.save': 'Save',
+  'saved.saving': 'Saving',
+  'saved.saved': 'Saved',
+  'saved.saveLabel': 'Save this place',
+  'saved.unsaveLabel': 'Saved. Tap to remove it from your saved places.',
+  'saved.saveError': 'This place could not be saved. Please try again.',
+  'saved.loadingLists': 'Loading your lists',
+  'saved.listsError': 'Your lists could not load',
+  'saved.pickerHint':
+    'Adding a place to a list saves it too. Removing it from every list keeps it saved.',
 };

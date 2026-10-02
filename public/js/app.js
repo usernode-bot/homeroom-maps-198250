@@ -16,12 +16,16 @@ import * as discover from './screens/discover.js';
 import * as directions from './screens/directions.js';
 import * as community from './screens/community.js';
 import * as profile from './screens/profile.js';
+import * as saved from './screens/saved.js';
 
 router.register('home', home);
 router.register('discover', discover);
 router.register('directions', directions);
 router.register('community', community);
 router.register('profile', profile);
+// Saved places is a sub-screen of Profile, reached from there; it is a
+// hash route so reload, back and share keep working.
+router.register('saved', saved);
 
 const root = document.getElementById('app');
 let currentName = 'home';

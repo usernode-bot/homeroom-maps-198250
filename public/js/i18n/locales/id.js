@@ -8,6 +8,7 @@ export default {
   'common.loading': 'Memuat',
   'common.comingSoon': 'Segera hadir',
   'common.tryAgain': 'Coba lagi',
+  'common.cancel': 'Batal',
 
   // navigation
   'nav.main': 'Utama',
@@ -72,7 +73,7 @@ export default {
 
   // home
   'home.placesTitle': 'Tempat',
-  'home.placesBody': 'Titik menarik, tempat tersimpan, dan kontribusi peta akan segera hadir.',
+  'home.placesBody': 'Titik menarik, kontribusi peta, dan tempat tersimpan ada di Jelajah dan Profil.',
 
   // discover
   'discover.idleTitle': 'Cari tempat',
@@ -164,7 +165,67 @@ export default {
   'units.metric': 'Metrik',
   'units.imperial': 'Imperial',
   'profile.savedTitle': 'Tempat tersimpan',
-  'profile.savedBody': 'Tempat tersimpan dan perencanaan perjalanan akan segera hadir.',
+  'profile.savedCount': 'Anda menyimpan {count} tempat.',
+  'profile.savedCountOne': 'Anda menyimpan 1 tempat.',
+  'profile.openSaved': 'Buka tempat tersimpan',
+  'profile.activity': 'Aktivitas',
+  'profile.activityBody': 'Angka diambil dari proposal dan suara Anda sendiri. Tidak pernah diperkirakan.',
+  'profile.activityError': 'Aktivitas Anda tidak dapat dimuat saat ini.',
+  'profile.proposals': 'Proposal',
+  'profile.implemented': 'Terlaksana',
+  'profile.votes': 'Suara diberikan',
   'profile.moreSoonTitle': 'Segera',
-  'profile.moreSoonBody': 'Riwayat kontribusi dan pengaturan notifikasi akan muncul di sini.',
+  'profile.moreSoonBody': 'Pengaturan notifikasi akan muncul di sini.',
+
+  // tempat tersimpan (Fase 7)
+  'saved.title': 'Tempat tersimpan',
+  'saved.intro':
+    'Tempat yang Anda simpan tersimpan di sini, dalam daftar yang Anda kendalikan. Hanya Anda yang bisa melihatnya.',
+  'saved.loading': 'Memuat tempat tersimpan',
+  'saved.loadError': 'Tempat tersimpan tidak dapat dimuat',
+  'saved.listsTitle': 'Daftar',
+  'saved.placesTitle': 'Semua tempat tersimpan',
+  'saved.newList': 'Daftar baru',
+  'saved.newListPlaceholder': 'Misalnya: Perjalanan akhir pekan',
+  'saved.create': 'Buat',
+  'saved.listName': 'Nama daftar',
+  'saved.rename': 'Ganti nama',
+  'saved.delete': 'Hapus',
+  'saved.saveChanges': 'Simpan perubahan',
+  'saved.backToLists': 'Kembali ke daftar',
+  'saved.itemOne': '1 tempat',
+  'saved.items': '{count} tempat',
+  'saved.customHint':
+    'Empat daftar bawaan tidak dapat diganti nama atau dihapus. Daftar buatan Anda bisa.',
+  'saved.defaultListNote': 'Daftar bawaan yang selalu ada.',
+  'saved.customListNote': 'Salah satu daftar buatan Anda.',
+  'saved.emptyTitle': 'Belum ada yang disimpan',
+  'saved.emptyBody':
+    'Cari tempat di Jelajah lalu ketuk Simpan. Tempat itu akan muncul di sini dan di daftar Anda.',
+  'saved.listEmptyTitle': 'Daftar ini kosong',
+  'saved.listEmptyBody': 'Tambahkan tempat tersimpan ke daftar ini dengan Tambahkan ke daftar.',
+  'saved.addToList': 'Tambahkan ke daftar',
+  'saved.addToLists': 'Tambahkan ke daftar',
+  'saved.removeFromList': 'Hapus dari daftar ini',
+  'saved.removedFromList': 'Dihapus dari daftar.',
+  'saved.listCreated': '"{name}" dibuat.',
+  'saved.listRenamed': 'Nama daftar diubah.',
+  'saved.listDeleted': 'Daftar dihapus. Tempat di dalamnya tetap tersimpan.',
+  'saved.deleteConfirmTitle': 'Hapus "{name}"?',
+  'saved.deleteConfirmBody':
+    'Daftar dan keanggotaannya dihapus. Tempatnya sendiri tetap tersimpan.',
+  'saved.updateError': 'Perubahan itu tidak dapat disimpan. Silakan coba lagi.',
+  'saved.signedOutTitle': 'Buka Homeroom Maps di dalam Homeroom',
+  'saved.signedOutBody': 'Tempat tersimpan memerlukan proses masuk Homeroom Anda.',
+  'saved.checking': 'Memeriksa',
+  'saved.save': 'Simpan',
+  'saved.saving': 'Menyimpan',
+  'saved.saved': 'Tersimpan',
+  'saved.saveLabel': 'Simpan tempat ini',
+  'saved.unsaveLabel': 'Tersimpan. Ketuk untuk menghapusnya dari tempat tersimpan Anda.',
+  'saved.saveError': 'Tempat ini tidak dapat disimpan. Silakan coba lagi.',
+  'saved.loadingLists': 'Memuat daftar Anda',
+  'saved.listsError': 'Daftar Anda tidak dapat dimuat',
+  'saved.pickerHint':
+    'Menambahkan tempat ke daftar sekaligus menyimpannya. Menghapusnya dari semua daftar tetap menyimpannya.',
 };

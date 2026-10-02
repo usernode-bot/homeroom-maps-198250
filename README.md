@@ -2,15 +2,16 @@
 
 A global map and location platform, built together with its community.
 
-> **Phase 0 (foundation), Phase 1 (world map), Phase 2 (global search),
-> Phase 3 (Places) and Phase 5 (community core: proposals and voting) are in
-> place.** The app shell, navigation, theme, shared UI, worldwide place
-> search, the Places model/card/detail views and the community proposal and
-> voting system all work. Directions, navigation, AI and the rest of the
-> community tools (reports, contributions, discussions) are not built yet
-> and are clearly labelled placeholders. `/api/config` reports
-> `mapProvider: null`: the map frame exists but no map provider is connected
-> yet, so nothing here is a working map.
+> **Phases 0 to 9 are in place**, except where a phase is explicitly still a
+> placeholder. The app shell, theme, shared UI, worldwide place search, the
+> Places model/card/detail views, directions and routing, community proposals
+> and voting, saved places and lists, navigation, and the English/Indonesian
+> i18n layer all work. Still not built, and clearly labelled as placeholders:
+> a connected map provider, a place-data provider, community reports and the
+> remaining community tools (contributions, discussions), AI, trip planning,
+> traffic, transit, offline maps and location sharing. `/api/config` reports
+> `mapProvider: null` and `placeProvider: null`: the map frame and the
+> per-place detail enrichment exist but no provider is connected yet.
 
 ## What exists today
 
@@ -64,32 +65,52 @@ A global map and location platform, built together with its community.
   from `/api/config`, `PLACE_PROVIDER` unset): every per-place field the
   search data does not carry renders an honest "Not available" state, and
   `/api/places*` answers 501 rather than serving fabricated POI data. The
-  SavedPlacesAdapter interface (`public/js/services/saved.js`) is the same
-  kind of placeholder: the contract is defined, no adapter exists, no fake
-  saved data.
+  SavedPlacesAdapter interface (`public/js/services/saved.js`) is unchanged;
+  Phase 7 supplies the real server-backed adapter that implements it.
+- **Saved places and lists (Phase 7)** — signed-in people save real places
+  from search or the Place Detail view and keep them in lists. Every account
+  starts with four built-in lists (Favorites, Want to Visit, Travel,
+  Restaurants); custom lists can be created, renamed and deleted, and a place
+  can be added to or removed from any list. Rules live in `saved/model.js`,
+  Postgres access in `saved/store.js` and routes (`/api/saved/*`) in
+  `saved/routes.js`; the Saved screen is the `#/saved` hash route, reachable
+  from Profile, and a Save button sits on every Place Detail. A saved place
+  references the real place id the search stack gives it: nothing is
+  invented, and no second place model exists. Ownership is enforced in every
+  query and by a composite owner foreign key, so nobody can read or change
+  another person's saved places. Deleting a list removes the list and its
+  memberships only; the places themselves stay saved.
+- **Profile activity (Phase 7)** — `GET /api/profile` returns the signed-in
+  person's own contribution, proposal and vote counts together with their
+  saved-place count, read from the existing community tables. The Profile tab
+  shows these real numbers; nothing is estimated, and when the request fails
+  the card says so instead of showing a number.
 - **Environment configuration** in `config.js`, plus `GET /api/config`
   (public, non-sensitive), `GET /api/me` (the signed-in person),
-  `GET /api/search`, `GET /api/search/suggest`, `GET /api/places` and
-  `GET /api/places/:id`.
+  `GET /api/search`, `GET /api/search/suggest`, `GET /api/places`,
+  `GET /api/places/:id`, the community routes under `/api/community/*`, and
+  the saved-places and profile routes under `/api/saved/*` and
+  `/api/profile`.
 - **Error boundary and loading states** — a screen that throws shows the
   shared error state with a Try again action; fetches show a skeleton.
-- **Service interfaces** for the later stages (`public/js/services/*`),
-  documented but not implemented, so no screen can fake map or community
-  behaviour.
-- **Tests** — `npm test` runs the search and community suites
-  (`node --test`). The community Postgres tests need a database:
+- **Service interfaces** (`public/js/services/*`) with real implementations
+  for search, places, routing, navigation, community and saved places, and
+  documented placeholders for the stages that are still unbuilt, so no screen
+  can fake map or community behaviour.
+- **Tests** — `npm test` runs the whole suite (`node --test`): search,
+  places, i18n, routing, navigation, community and saved places. The Postgres
+  suites (community, saved places, profile) need a database:
   `TEST_DATABASE_URL` (or the build worker's `INLOOP_DATABASE_URL`); without
   one they are skipped.
 
-## What is a placeholder (map phase and later)
+## What is still a placeholder
 
 Map canvas, "Search this area" / "Nearby" controls (the search service
 already accepts a map area and a location with a radius; only the
 map-anchored UI is missing), points-of-interest browsing from a dedicated
-place-data provider, routing and navigation, traffic, public transit,
-offline maps, saved places, trip planning, location sharing, the AI
-assistant, and the community features after proposals and voting (reports,
-contributions, discussions). The Home map frame and the two map controls are
+place-data provider, traffic, public transit, offline maps, trip planning,
+location sharing, the AI assistant, and the community features after
+proposals and voting (reports, contributions, discussions). The Home map frame and the two map controls are
 disabled placeholders; `/api/config` reports `mapProvider: null` and
 `placeProvider: null`.
 
