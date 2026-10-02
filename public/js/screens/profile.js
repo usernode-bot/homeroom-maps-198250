@@ -14,12 +14,11 @@ import { button } from '../components/button.js';
 import { emptyState } from '../components/empty-state.js';
 import { errorState } from '../components/error-state.js';
 import { spinner } from '../components/loading.js';
-import { placeholderPanel } from '../components/placeholder-panel.js';
 import { setState } from '../state.js';
 import { fetchMe, apiGet } from '../api.js';
 import { hasToken } from '../auth.js';
-import { getThemePreference, setThemePreference } from '../theme.js';
 import * as router from '../router.js';
+import { getThemePreference, setThemePreference } from '../theme.js';
 import {
   t,
   getLanguagePreference,
@@ -92,11 +91,32 @@ export async function render(ctx) {
     themeCard(),
     languageCard(),
     unitsCard(),
+    tripsCard(),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
     }),
   );
+}
+
+// Trips — the Phase 10 trip planner entry. There is deliberately no sixth
+// bottom-nav tab: this card is the route in, and #/trips is deep-linkable.
+function tripsCard() {
+  const c = card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('nav.trips') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.tripsBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('trips.open'), {
+        variant: 'secondary',
+        attrs: { dataset: { openTrips: 'true' } },
+        onClick: () => router.navigate('trips'),
+      }),
+    ]),
+  ]);
+  return c;
 }
 
 // Both Phase 7 cards are filled from ONE request to /api/profile: the

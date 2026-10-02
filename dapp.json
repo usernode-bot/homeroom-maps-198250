@@ -311,6 +311,51 @@
       "name": "Profile opens",
       "path": "/#/profile",
       "expectText": "Appearance"
+    },
+    {
+      "id": "trips.demo",
+      "name": "Trip detail renders the demo itinerary",
+      "path": "/#/trips?demo=1",
+      "expectSelector": "[data-trip-detail] [data-trip-day] [data-trip-item]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/trips.js",
+        "public/js/components/trips/**",
+        "public/js/services/trips.js",
+        "public/js/services/trips-core.js",
+        "public/js/app.js",
+        "public/js/screens/profile.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "public/js/i18n/format.js",
+        "public/js/map/adapter.js",
+        "public/js/map/maplibre.js",
+        "public/js/map/unsupported.js",
+        "public/js/services/map.js",
+        "trips/**"
+      ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Trip list is empty for a new visitor",
+      "path": "/#/trips",
+      "expectText": "You have not created any trips yet"
+    },
+    {
+      "name": "Trip deep link opens the demo trip",
+      "path": "/#/trips?trip=900001&demo=1",
+      "expectSelector": "[data-trip-detail='900001']",
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Trips copy in Indonesian",
+      "path": "/#/trips?lang=id",
+      "expectText": "Perjalanan"
+    },
+    {
+      "name": "Trips entry renders on Profile",
+      "path": "/#/profile",
+      "expectText": "Trips"
     }
   ],
   "permissions": [

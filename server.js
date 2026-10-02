@@ -22,6 +22,8 @@ const { createReportsRouter } = require('./reports/routes');
 const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
+const { createStore: createTripStore } = require('./trips/store');
+const { createTripsRouter } = require('./trips/routes');
 const { createStore: createSavedStore } = require('./saved/store');
 const { createSavedRouter } = require('./saved/routes');
 const { createProfiles } = require('./saved/profiles');
@@ -40,6 +42,10 @@ const communityStore = createStore({
   platformOrigin: PLATFORM_ORIGIN,
 });
 
+// Trip & day planner (Phase 10): trips, their generated days and their
+// itinerary items. All three tables are staging:private, so staging starts
+// empty and the store seeds one fake demo trip there.
+const tripStore = createTripStore({ pool });
 // Saved places (Phase 7): per-user lists and saved places in Postgres.
 // Ownership is enforced in every query and by a composite owner foreign key;
 // see saved/store.js. `profiles` reads the person's own proposals and votes
@@ -291,6 +297,7 @@ app.use(
   createCommunityRouter({ store: communityStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
 );
 
+app.use('/api/trips', createTripsRouter({ store: tripStore, isStaging: IS_STAGING }));
 app.use(
   '/api/reports',
   createReportsRouter({ store: reportsStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
@@ -427,6 +434,8 @@ async function start() {
   await communityStore.migrate();
   await savedStore.migrate();
   if (IS_STAGING) await communityStore.seedStaging();
+  await tripStore.migrate();
+  if (IS_STAGING) await tripStore.seedStaging();
   await reportsStore.migrate();
   if (IS_STAGING) await reportsStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));

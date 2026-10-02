@@ -139,6 +139,15 @@ export function formatDate(date, { locale, timeZone, dateStyle = 'medium' } = {}
   return withTimeZone(dtf(locale, { dateStyle }), d, timeZone, { dateStyle }, locale);
 }
 
+// Weekday names ("Saturday") via Intl, for trip day headings. A bad date
+// renders an empty string, never "Invalid Date"; an unavailable timezone
+// falls back to UTC exactly as formatDate does.
+export function formatWeekday(date, { locale, timeZone, weekday = 'long' } = {}) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return withTimeZone(dtf(locale, { weekday }), d, timeZone, { weekday }, locale);
+}
+
 export function formatTime(date, { locale, timeZone, timeStyle = 'short' } = {}) {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return '';
