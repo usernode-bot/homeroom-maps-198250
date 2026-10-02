@@ -20,6 +20,8 @@ const { parseReviewers } = require('./community/model');
 const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
+const { createStore: createTripStore } = require('./trips/store');
+const { createTripsRouter } = require('./trips/routes');
 
 const app = express();
 const port = PORT;
@@ -34,6 +36,11 @@ const communityStore = createStore({
   policies: communityPolicies,
   platformOrigin: PLATFORM_ORIGIN,
 });
+
+// Trip & day planner (Phase 10): trips, their generated days and their
+// itinerary items. All three tables are staging:private, so staging starts
+// empty and the store seeds one fake demo trip there.
+const tripStore = createTripStore({ pool });
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -258,6 +265,8 @@ app.use(
   createCommunityRouter({ store: communityStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
 );
 
+app.use('/api/trips', createTripsRouter({ store: tripStore, isStaging: IS_STAGING }));
+
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
 // never leaves the server. The typed error codes from places/provider.js map
@@ -395,6 +404,8 @@ async function start() {
   // database that already has it keeps it; nothing drops it).
   await communityStore.migrate();
   if (IS_STAGING) await communityStore.seedStaging();
+  await tripStore.migrate();
+  if (IS_STAGING) await tripStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

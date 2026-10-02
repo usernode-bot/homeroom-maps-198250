@@ -106,6 +106,8 @@ export function createMapLibreAdapter(mapConfig) {
   let readyReported = false;
   let routes = null; // the last setRoutes() payload, applied when layers exist
   let routeLayersReady = false;
+  let markers = null; // the last setMarkers() payload, applied when layers exist
+  let markerElements = []; // live maplibregl.Marker handles
 
   const capabilities = {
     rotation: true,
@@ -204,6 +206,7 @@ export function createMapLibreAdapter(mapConfig) {
       if (destroyed) return;
       ensureAccuracyLayer();
       if (routes) applyRoutes(routes);
+      if (markers) applyMarkers(markers);
       readAttribution(onAttribution);
       if (onState && !readyReported) {
         readyReported = true;
@@ -269,6 +272,42 @@ export function createMapLibreAdapter(mapConfig) {
     } catch (err) {
       console.warn('[map] route render failed: ' + (err && err.message));
     }
+  }
+
+  // ── itinerary markers ──────────────────────────────────────────────────
+  //
+  // Numbered stop chips are HTML markers, not a symbol layer: a symbol layer
+  // needs glyph fonts from the style's tile host, which not every keyless
+  // style serves (a missing font silently drops the label). A DOM marker has
+  // no such dependency and survives a style swap on its own.
+
+  function applyMarkers(list) {
+    if (!map || destroyed || !maplibregl) return;
+    clearMarkers();
+    for (const m of list) {
+      const element = document.createElement('div');
+      element.textContent = m.label == null ? '' : String(m.label);
+      element.setAttribute('aria-hidden', 'true');
+      element.style.cssText =
+        'display:flex;align-items:center;justify-content:center;width:26px;height:26px;' +
+        'border-radius:9999px;background:' + ROUTE_COLOR + ';color:#fff;font:600 12px/1 system-ui,sans-serif;' +
+        'border:2px solid #ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.4)';
+      const marker = new maplibregl.Marker({ element, anchor: 'center' })
+        .setLngLat([m.lng, m.lat])
+        .addTo(map);
+      markerElements.push(marker);
+    }
+  }
+
+  function clearMarkers() {
+    for (const marker of markerElements) {
+      try {
+        marker.remove();
+      } catch {
+        /* the map may already be gone */
+      }
+    }
+    markerElements = [];
   }
 
   function clearRouteSource() {
@@ -413,6 +452,15 @@ export function createMapLibreAdapter(mapConfig) {
       }
     },
 
+    // `markers` is an array of { lng, lat, label, selected } or null to
+    // clear. The itinerary uses it to show stop order on the map; data set
+    // before the style is ready is held and applied on load.
+    setMarkers(nextMarkers) {
+      markers = Array.isArray(nextMarkers) && nextMarkers.length ? nextMarkers : null;
+      if (markers) applyMarkers(markers);
+      else clearMarkers();
+    },
+
     fitBounds(bounds, opts = {}) {
       if (!map || !bounds) return;
       const sw = [bounds.west, bounds.south];
@@ -431,6 +479,7 @@ export function createMapLibreAdapter(mapConfig) {
         resizeObserver.disconnect();
         resizeObserver = null;
       }
+      clearMarkers();
       if (marker) {
         marker.remove();
         marker = null;

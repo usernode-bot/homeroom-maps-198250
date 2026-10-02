@@ -23,6 +23,12 @@
 //                                         clear them when passed null; data
 //                                         set before the style is ready is
 //                                         held and applied on load
+//   setMarkers([{ lng, lat, label, selected }] | null)
+//                                      -> draw numbered itinerary markers
+//                                         (Trips), or clear them when null;
+//                                         additive and backward compatible,
+//                                         held until the style is ready like
+//                                         setRoutes
 //   fitBounds({ west, south, east, north }, opts?) -> fit the camera to a
 //                                         route's bounds (Directions)
 //   capabilities                       -> { rotation, touchGestures, accuracyCircle }

@@ -15,12 +15,14 @@ import * as home from './screens/home.js';
 import * as discover from './screens/discover.js';
 import * as directions from './screens/directions.js';
 import * as community from './screens/community.js';
+import * as trips from './screens/trips.js';
 import * as profile from './screens/profile.js';
 
 router.register('home', home);
 router.register('discover', discover);
 router.register('directions', directions);
 router.register('community', community);
+router.register('trips', trips);
 router.register('profile', profile);
 
 const root = document.getElementById('app');

@@ -85,6 +85,11 @@ export function createMapService(mapConfig, { onState, onAttribution, force = nu
     setRoutes(routes) {
       adapter && adapter.setRoutes(routes);
     },
+    // Itinerary markers (Trips). Same forwarding contract as setRoutes; an
+    // adapter that predates the method is simply skipped.
+    setMarkers(markers) {
+      if (adapter && typeof adapter.setMarkers === 'function') adapter.setMarkers(markers);
+    },
     fitBounds(bounds, opts) {
       adapter && adapter.fitBounds(bounds, opts);
     },
