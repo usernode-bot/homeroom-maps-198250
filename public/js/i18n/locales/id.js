@@ -215,7 +215,7 @@ export default {
   'reports.type.fire': 'Kebakaran',
   'reports.type.broken_road': 'Jalan rusak',
   'reports.type.wrong_map_data': 'Data peta salah',
-  'reports.type.place_closed': 'Tempat tutup',
+  'reports.type.place_closed': 'Tempat ditutup',
   'reports.type.other': 'Lainnya',
   'reports.status.pending': 'Menunggu',
   'reports.status.verified': 'Terverifikasi',

@@ -100,44 +100,44 @@ test('meta names the types, statuses and the viewer role', { skip }, async () =>
 
 test('empty feed: every view answers an empty list, not an error', { skip }, async () => {
   for (const view of ['recent', 'mine']) {
-    const r = await call('GET', `/reports?view=${view}`, { as: 'carol' });
+    const r = await call('GET', `/?view=${view}`, { as: 'carol' });
     assert.equal(r.status, 200, view);
     assert.deepEqual(r.body.items, [], view);
     assert.equal(r.body.hasMore, false);
   }
-  const near = await call('GET', '/reports?view=nearby&near=52.5,13.4', { as: 'carol' });
+  const near = await call('GET', '/?view=nearby&near=52.5,13.4', { as: 'carol' });
   assert.equal(near.status, 200);
   assert.deepEqual(near.body.items, []);
 });
 
 test('nearby without a location is a 400, not an empty feed', { skip }, async () => {
-  const r = await call('GET', '/reports?view=nearby', { as: 'bob' });
+  const r = await call('GET', '/?view=nearby', { as: 'bob' });
   assert.equal(r.status, 400);
   assert.equal(r.body.error.code, 'invalid_query');
 });
 
 test('create: validation errors name each field and carry the typed codes', { skip }, async () => {
-  const r = await call('POST', '/reports', { body: { type: 'nope', lat: 1, lng: 2 } });
+  const r = await call('POST', '/', { body: { type: 'nope', lat: 1, lng: 2 } });
   assert.equal(r.status, 400);
   assert.equal(r.body.error.code, 'invalid_report_type');
   assert.ok(r.body.error.fields.type);
 
-  const badCoords = await call('POST', '/reports', { body: report({ lat: 100 }) });
+  const badCoords = await call('POST', '/', { body: report({ lat: 100 }) });
   assert.equal(badCoords.status, 400);
   assert.equal(badCoords.body.error.code, 'invalid_coordinates');
   assert.ok(badCoords.body.error.fields.location);
 
-  const long = await call('POST', '/reports', { body: report({ description: 'x'.repeat(2001) }) });
+  const long = await call('POST', '/', { body: report({ description: 'x'.repeat(2001) }) });
   assert.equal(long.status, 400);
   assert.ok(long.body.error.fields.description);
 
-  const place = await call('POST', '/reports', { body: report({ placeId: 'only-id' }) });
+  const place = await call('POST', '/', { body: report({ placeId: 'only-id' }) });
   assert.equal(place.status, 400);
   assert.ok(place.body.error.fields.placeId);
 });
 
 test('create a report: immediately public, with a derived expiry and history', { skip }, async () => {
-  const created = await call('POST', '/reports', {
+  const created = await call('POST', '/', {
     as: 'alice',
     body: report({ type: 'traffic', placeId: ' p-9 ', placeProvider: ' photon ' }),
   });
@@ -164,69 +164,69 @@ test('create a report: immediately public, with a derived expiry and history', {
   assert.deepEqual(p.viewer.transitions, []);
 
   // Another person sees it in Recent and Nearby, and may react.
-  const recent = await call('GET', '/reports?view=recent', { as: 'bob' });
+  const recent = await call('GET', '/?view=recent', { as: 'bob' });
   assert.ok(recent.body.items.some((x) => x.id === p.id));
-  const near = await call('GET', '/reports?view=nearby&near=52.52,13.40&radius=10', { as: 'bob' });
+  const near = await call('GET', '/?view=nearby&near=52.52,13.40&radius=10', { as: 'bob' });
   assert.equal(near.body.items[0].id, p.id);
   assert.ok(near.body.items[0].distanceKm < 10);
-  const other = await call('GET', `/reports/${p.id}`, { as: 'bob' });
+  const other = await call('GET', `/${p.id}`, { as: 'bob' });
   assert.equal(other.body.viewer.canReact, true);
   assert.equal(other.body.viewer.isReporter, false);
 
   // Malformed place references never reach the database shape-check twice.
-  const noPlace = await call('POST', '/reports', { as: 'bob', body: report({ type: 'fire' }) });
+  const noPlace = await call('POST', '/', { as: 'bob', body: report({ type: 'fire' }) });
   assert.equal(noPlace.status, 200);
   assert.equal(noPlace.body.place, null);
 });
 
 test('reactions: one active answer per person, changes, duplicates, withdrawal', { skip }, async () => {
-  const p = (await call('POST', '/reports', { as: 'carol', body: report({ type: 'hazard' }) })).body;
+  const p = (await call('POST', '/', { as: 'carol', body: report({ type: 'hazard' }) })).body;
 
   // The reporter cannot react.
-  const own = await call('PUT', `/reports/${p.id}/reaction`, { as: 'carol', body: { value: 'confirm' } });
+  const own = await call('PUT', `/${p.id}/reaction`, { as: 'carol', body: { value: 'confirm' } });
   assert.equal(own.status, 403);
   assert.equal(own.body.error.code, 'reaction_not_allowed');
 
-  const bad = await call('PUT', `/reports/${p.id}/reaction`, { as: 'bob', body: { value: 'maybe' } });
+  const bad = await call('PUT', `/${p.id}/reaction`, { as: 'bob', body: { value: 'maybe' } });
   assert.equal(bad.status, 400);
   assert.equal(bad.body.error.code, 'invalid_reaction');
 
-  const up = await call('PUT', `/reports/${p.id}/reaction`, { as: 'bob', body: { value: 'confirm' } });
+  const up = await call('PUT', `/${p.id}/reaction`, { as: 'bob', body: { value: 'confirm' } });
   assert.equal(up.body.outcome, 'cast');
   assert.deepEqual(up.body.report.reactions, { confirm: 1, disagree: 0 });
   assert.equal(up.body.report.viewer.reaction, 'confirm');
 
   // The same answer again, including in parallel, never counts twice.
   const repeats = await Promise.all(
-    [1, 2, 3].map(() => call('PUT', `/reports/${p.id}/reaction`, { as: 'bob', body: { value: 'confirm' } })),
+    [1, 2, 3].map(() => call('PUT', `/${p.id}/reaction`, { as: 'bob', body: { value: 'confirm' } })),
   );
   for (const r of repeats) assert.equal(r.body.outcome, 'unchanged');
-  const afterRepeat = await call('GET', `/reports/${p.id}`, { as: 'carol' });
+  const afterRepeat = await call('GET', `/${p.id}`, { as: 'carol' });
   assert.deepEqual(afterRepeat.body.reactions, { confirm: 1, disagree: 0 });
   const rows = await pool.query('SELECT count(*)::int AS n FROM report_reactions WHERE report_id = $1', [p.id]);
   assert.equal(rows.rows[0].n, 1);
 
   // Changing the answer moves it, it does not add a second one.
-  const down = await call('PUT', `/reports/${p.id}/reaction`, { as: 'bob', body: { value: 'disagree' } });
+  const down = await call('PUT', `/${p.id}/reaction`, { as: 'bob', body: { value: 'disagree' } });
   assert.equal(down.body.outcome, 'changed');
   assert.deepEqual(down.body.report.reactions, { confirm: 0, disagree: 1 });
 
   // Simultaneous first answers from different people are each counted once.
   await Promise.all([
-    call('PUT', `/reports/${p.id}/reaction`, { as: 'alice', body: { value: 'confirm' } }),
-    call('PUT', `/reports/${p.id}/reaction`, { as: 'rita', body: { value: 'confirm' } }),
+    call('PUT', `/${p.id}/reaction`, { as: 'alice', body: { value: 'confirm' } }),
+    call('PUT', `/${p.id}/reaction`, { as: 'rita', body: { value: 'confirm' } }),
   ]);
-  const tally = (await call('GET', `/reports/${p.id}`, { as: 'bob' })).body;
+  const tally = (await call('GET', `/${p.id}`, { as: 'bob' })).body;
   // Bob's own answer is the Disagree he changed to; Alice and Rita Confirmed.
   assert.deepEqual(tally.reactions, { confirm: 2, disagree: 1 });
   assert.equal(tally.viewer.reaction, 'disagree');
 
   // Withdrawing removes the row; withdrawing again is a no-op.
-  const removed = await call('DELETE', `/reports/${p.id}/reaction`, { as: 'bob' });
+  const removed = await call('DELETE', `/${p.id}/reaction`, { as: 'bob' });
   assert.equal(removed.body.outcome, 'removed');
   assert.deepEqual(removed.body.report.reactions, { confirm: 2, disagree: 0 });
   assert.equal(removed.body.report.viewer.reaction, null);
-  const again = await call('DELETE', `/reports/${p.id}/reaction`, { as: 'bob' });
+  const again = await call('DELETE', `/${p.id}/reaction`, { as: 'bob' });
   assert.equal(again.body.outcome, 'unchanged');
 });
 
@@ -234,21 +234,21 @@ test('flags: once per person, never by the reporter, listeners hear it once', { 
   const heard = [];
   policies.on('report.flagged', ({ report: r, viewer }) => heard.push([r.id, viewer.username]));
 
-  const p = (await call('POST', '/reports', { as: 'alice', body: report({ type: 'other' }) })).body;
-  const own = await call('POST', `/reports/${p.id}/flag`, { as: 'alice', body: { reason: 'mine' } });
+  const p = (await call('POST', '/', { as: 'alice', body: report({ type: 'other' }) })).body;
+  const own = await call('POST', `/${p.id}/flag`, { as: 'alice', body: { reason: 'mine' } });
   assert.equal(own.status, 403);
   assert.equal(own.body.error.code, 'flag_not_allowed');
 
-  const tooLong = await call('POST', `/reports/${p.id}/flag`, { as: 'bob', body: { reason: 'x'.repeat(501) } });
+  const tooLong = await call('POST', `/${p.id}/flag`, { as: 'bob', body: { reason: 'x'.repeat(501) } });
   assert.equal(tooLong.status, 400);
   assert.ok(tooLong.body.error.fields.reason);
 
-  const flagged = await call('POST', `/reports/${p.id}/flag`, { as: 'bob', body: { reason: 'Looks staged.' } });
+  const flagged = await call('POST', `/${p.id}/flag`, { as: 'bob', body: { reason: 'Looks staged.' } });
   assert.equal(flagged.status, 200);
   assert.equal(flagged.body.outcome, 'flagged');
 
   // A second flag by the same person is a no-op, not a second row.
-  const again = await call('POST', `/reports/${p.id}/flag`, { as: 'bob' });
+  const again = await call('POST', `/${p.id}/flag`, { as: 'bob' });
   assert.equal(again.body.outcome, 'already');
   const rows = await pool.query('SELECT count(*)::int AS n FROM report_flags WHERE report_id = $1', [p.id]);
   assert.equal(rows.rows[0].n, 1);
@@ -257,13 +257,13 @@ test('flags: once per person, never by the reporter, listeners hear it once', { 
   assert.equal(heard[0][1], 'bob');
 
   // A different person can still flag.
-  const carol = await call('POST', `/reports/${p.id}/flag`, { as: 'carol', body: {} });
+  const carol = await call('POST', `/${p.id}/flag`, { as: 'carol', body: {} });
   assert.equal(carol.body.outcome, 'flagged');
 });
 
 test('status transitions follow the lifecycle and the roles', { skip }, async () => {
-  const p = (await call('POST', '/reports', { as: 'alice', body: report({ type: 'road_closed' }) })).body;
-  const move = (as, status) => call('POST', `/reports/${p.id}/status`, { as, body: { status } });
+  const p = (await call('POST', '/', { as: 'alice', body: report({ type: 'road_closed' }) })).body;
+  const move = (as, status) => call('POST', `/${p.id}/status`, { as, body: { status } });
 
   // Reviewers only; nobody skips a step; unknown statuses are 400s.
   assert.equal((await move('alice', 'verified')).status, 403);
@@ -280,7 +280,7 @@ test('status transitions follow the lifecycle and the roles', { skip }, async ()
     ['pending', 'verified'],
   );
   // Reactions stay open while it is reviewed — only the reporter is excluded.
-  assert.equal((await call('PUT', `/reports/${p.id}/reaction`, { as: 'bob', body: { value: 'confirm' } })).status, 200);
+  assert.equal((await call('PUT', `/${p.id}/reaction`, { as: 'bob', body: { value: 'confirm' } })).status, 200);
 
   const rejected = await move('rita', 'rejected');
   assert.equal(rejected.body.status, 'rejected');
@@ -294,69 +294,69 @@ test('status transitions follow the lifecycle and the roles', { skip }, async ()
 });
 
 test('expiration is derived on read: stale reports read Expired and leave the feed', { skip }, async () => {
-  const p = (await call('POST', '/reports', { as: 'alice', body: report({ type: 'fire' }) })).body;
+  const p = (await call('POST', '/', { as: 'alice', body: report({ type: 'fire' }) })).body;
   assert.equal(p.effectiveStatus, 'pending');
 
   // Push its expiry into the past directly; nothing ever stores 'expired'.
   await pool.query("UPDATE reports SET expires_at = now() - interval '1 hour' WHERE id = $1", [p.id]);
 
-  const got = await call('GET', `/reports/${p.id}`, { as: 'bob' });
+  const got = await call('GET', `/${p.id}`, { as: 'bob' });
   assert.equal(got.body.status, 'pending');
   assert.equal(got.body.effectiveStatus, 'expired');
 
-  const recent = await call('GET', '/reports?view=recent', { as: 'bob' });
+  const recent = await call('GET', '/?view=recent', { as: 'bob' });
   assert.ok(!recent.body.items.some((x) => x.id === p.id), 'expired reports leave Recent');
-  const near = await call('GET', '/reports?view=nearby&near=52.52,13.40&radius=100', { as: 'bob' });
+  const near = await call('GET', '/?view=nearby&near=52.52,13.40&radius=100', { as: 'bob' });
   assert.ok(!near.body.items.some((x) => x.id === p.id), 'expired reports leave Nearby');
-  const withHistory = await call('GET', '/reports?view=recent&includeExpired=1', { as: 'bob' });
+  const withHistory = await call('GET', '/?view=recent&includeExpired=1', { as: 'bob' });
   assert.ok(withHistory.body.items.some((x) => x.id === p.id), 'includeExpired shows the history');
 
   // The reporter still sees it in Mine (their own history).
-  const mine = await call('GET', '/reports?view=mine', { as: 'alice' });
+  const mine = await call('GET', '/?view=mine', { as: 'alice' });
   const row = mine.body.items.find((x) => x.id === p.id);
   assert.ok(row, 'Mine keeps the reporter’s expired report');
   assert.equal(row.effectiveStatus, 'expired');
 
   // A reviewer can still act on a stale report; the pill derives live.
-  const moved = await call('POST', `/reports/${p.id}/status`, { as: 'rita', body: { status: 'verified' } });
+  const moved = await call('POST', `/${p.id}/status`, { as: 'rita', body: { status: 'verified' } });
   assert.equal(moved.body.effectiveStatus, 'expired');
-  const rejected = await call('POST', `/reports/${p.id}/status`, { as: 'rita', body: { status: 'rejected' } });
+  const rejected = await call('POST', `/${p.id}/status`, { as: 'rita', body: { status: 'rejected' } });
   assert.equal(rejected.body.effectiveStatus, 'rejected');
   assert.ok(
-    (await call('GET', '/reports?view=recent', { as: 'bob' })).body.items.some((x) => x.id === p.id),
+    (await call('GET', '/?view=recent', { as: 'bob' })).body.items.some((x) => x.id === p.id),
     'a rejected report keeps its standing answer in the feed',
   );
 });
 
 test('paging reports hasMore and the next offset', { skip }, async () => {
-  const first = (await call('GET', '/reports?view=recent&limit=2', { as: 'bob' })).body;
+  const first = (await call('GET', '/?view=recent&limit=2', { as: 'bob' })).body;
   assert.equal(first.items.length, 2);
   assert.equal(first.hasMore, true);
   assert.equal(first.nextOffset, 2);
-  const second = (await call('GET', `/reports?view=recent&limit=2&offset=${first.nextOffset}`, { as: 'bob' })).body;
+  const second = (await call('GET', `/?view=recent&limit=2&offset=${first.nextOffset}`, { as: 'bob' })).body;
   assert.ok(!second.items.some((x) => first.items.some((y) => y.id === x.id)));
 });
 
 test('type and place filters narrow the feed', { skip }, async () => {
-  const fire = (await call('POST', '/reports', { as: 'carol', body: report({ type: 'fire', lat: 48.85, lng: 2.35 }) })).body;
-  const typed = (await call('GET', '/reports?view=recent&type=fire', { as: 'bob' })).body.items;
+  const fire = (await call('POST', '/', { as: 'carol', body: report({ type: 'fire', lat: 48.85, lng: 2.35 }) })).body;
+  const typed = (await call('GET', '/?view=recent&type=fire', { as: 'bob' })).body.items;
   assert.ok(typed.length >= 1);
   assert.ok(typed.every((x) => x.type === 'fire'));
   assert.ok(typed.some((x) => x.id === fire.id));
-  const placed = (await call('GET', '/reports?view=recent&placeId=p-9', { as: 'bob' })).body.items;
+  const placed = (await call('GET', '/?view=recent&placeId=p-9', { as: 'bob' })).body.items;
   assert.equal(placed.length, 1);
   assert.equal(placed[0].place.id, 'p-9');
-  const bad = await call('GET', '/reports?view=recent&type=bogus', { as: 'bob' });
+  const bad = await call('GET', '/?view=recent&type=bogus', { as: 'bob' });
   assert.equal(bad.status, 400);
   assert.equal(bad.body.error.code, 'invalid_report_type');
 });
 
 test('unknown and malformed ids are 404s', { skip }, async () => {
-  assert.equal((await call('GET', '/reports/999999999', { as: 'bob' })).status, 404);
-  assert.equal((await call('GET', '/reports/abc', { as: 'bob' })).status, 404);
-  assert.equal((await call('PUT', '/reports/abc/reaction', { as: 'bob', body: { value: 'confirm' } })).status, 404);
-  assert.equal((await call('POST', '/reports/abc/flag', { as: 'bob', body: {} })).status, 404);
-  assert.equal((await call('POST', '/reports/abc/status', { as: 'rita', body: { status: 'verified' } })).status, 404);
+  assert.equal((await call('GET', '/999999999', { as: 'bob' })).status, 404);
+  assert.equal((await call('GET', '/abc', { as: 'bob' })).status, 404);
+  assert.equal((await call('PUT', '/abc/reaction', { as: 'bob', body: { value: 'confirm' } })).status, 404);
+  assert.equal((await call('POST', '/abc/flag', { as: 'bob', body: {} })).status, 404);
+  assert.equal((await call('POST', '/abc/status', { as: 'rita', body: { status: 'verified' } })).status, 404);
 });
 
 test('staging seed is idempotent and never involves the visitor', { skip }, async () => {
@@ -375,16 +375,16 @@ test('staging seed is idempotent and never involves the visitor', { skip }, asyn
   );
   assert.equal(votes.rows[0].n, 0);
   // The verified demo report carries the spec's reaction split.
-  const demo = (await call('GET', '/reports/920002', { as: 'carol' })).body;
+  const demo = (await call('GET', '/920002', { as: 'carol' })).body;
   assert.deepEqual(demo.reactions, { confirm: 3, disagree: 1 });
   assert.deepEqual(
     demo.history.map((h) => h.to),
     ['pending', 'verified'],
   );
   // One seeded report is already past its expiry.
-  const expired = (await call('GET', '/reports/920004', { as: 'carol' })).body;
+  const expired = (await call('GET', '/920004', { as: 'carol' })).body;
   assert.equal(expired.effectiveStatus, 'expired');
   // A fresh visitor's own list is untouched by the seed.
-  const mine = (await call('GET', '/reports?view=mine', { as: 'carol' })).body.items;
+  const mine = (await call('GET', '/?view=mine', { as: 'carol' })).body.items;
   assert.ok(mine.every((x) => x.reporter.username === 'carol'));
 });

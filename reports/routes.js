@@ -2,16 +2,17 @@
 // app's auth gate (all /api/* requests need a verified platform token), so
 // req.user is always present here. Same construction as
 // community/routes.js — the same viewer shape, the same typed error
-// envelope.
+// envelope. Routes are defined relative to the mount point, matching the
+// client contract in public/js/services/community.js:
 //
 //   GET    /meta                        types, statuses, viewer role, limits
-//   GET    /reports?view=…              feed: recent | nearby | mine
-//   GET    /reports/:id                 one report with its status history
-//   POST   /reports                     create { type, lat, lng, … }
-//   PUT    /reports/:id/reaction        cast or change { value: 'confirm' | 'disagree' }
-//   DELETE /reports/:id/reaction        withdraw your reaction
-//   POST   /reports/:id/flag            report abuse { reason? }, once per person
-//   POST   /reports/:id/status          reviewer-only lifecycle move { status }
+//   GET    /?view=…                     feed: recent | nearby | mine
+//   GET    /:id                         one report with its status history
+//   POST   /                            create { type, lat, lng, … }
+//   PUT    /:id/reaction                cast or change { value: 'confirm' | 'disagree' }
+//   DELETE /:id/reaction                withdraw your reaction
+//   POST   /:id/flag                    report abuse { reason? }, once per person
+//   POST   /:id/status                  reviewer-only lifecycle move { status }
 'use strict';
 
 const express = require('express');
@@ -56,20 +57,20 @@ function createReportsRouter({ store, reviewers = new Set() }) {
     })),
   );
 
-  router.get('/reports', handle((viewer, req) => store.list(viewer, req.query)));
-  router.get('/reports/:id', handle((viewer, req) => store.get(viewer, req.params.id)));
-  router.post('/reports', handle((viewer, req) => store.create(viewer, req.body)));
+  router.get('/', handle((viewer, req) => store.list(viewer, req.query)));
+  router.get('/:id', handle((viewer, req) => store.get(viewer, req.params.id)));
+  router.post('/', handle((viewer, req) => store.create(viewer, req.body)));
   router.put(
-    '/reports/:id/reaction',
+    '/:id/reaction',
     handle((viewer, req) => store.setReaction(viewer, req.params.id, req.body && req.body.value)),
   );
-  router.delete('/reports/:id/reaction', handle((viewer, req) => store.removeReaction(viewer, req.params.id)));
+  router.delete('/:id/reaction', handle((viewer, req) => store.removeReaction(viewer, req.params.id)));
   router.post(
-    '/reports/:id/flag',
+    '/:id/flag',
     handle((viewer, req) => store.flag(viewer, req.params.id, req.body && req.body.reason)),
   );
   router.post(
-    '/reports/:id/status',
+    '/:id/status',
     handle((viewer, req) => store.transition(viewer, req.params.id, req.body && req.body.status)),
   );
 
