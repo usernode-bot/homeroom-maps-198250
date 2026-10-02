@@ -14,6 +14,7 @@ import {
   MapErrorKind,
   toMapError,
 } from './errors.js';
+import { REPORT_TYPES, reportPinImage } from './report-icons.js';
 
 // Same-origin, relative to this app. This path is produced by `npm run
 // build:map`, never committed.
@@ -34,7 +35,32 @@ const ROUTE_COLOR = '#4f46e5';
 const ROUTE_CASING_COLOR = '#312e81';
 const ROUTE_ALTERNATIVE_COLOR = '#6b7280';
 
+// Report pins draw the type glyph in the pin's background colour. Expired
+// reports keep their type but turn grey, so the feed and the map read the
+// same story (the same effectiveStatus the server derives).
+
 let loaderPromise = null;
+
+// The rasterized pin images — one accent and one expired-grey variant per
+// report type, generated once per device pixel ratio through the SVG
+// engine. A failed generation is not cached: the next map that mounts
+// tries again.
+let reportImagesPromise = null;
+
+function reportImages() {
+  if (reportImagesPromise) return reportImagesPromise;
+  const pixelRatio = window.devicePixelRatio || 1;
+  reportImagesPromise = Promise.all(
+    REPORT_TYPES.flatMap((type) => [
+      reportPinImage(type, { pixelRatio }).then((img) => [type, img]),
+      reportPinImage(type, { expired: true, pixelRatio }).then((img) => [`${type}-expired`, img]),
+    ]),
+  ).then((entries) => Object.fromEntries(entries));
+  reportImagesPromise.catch(() => {
+    reportImagesPromise = null;
+  });
+  return reportImagesPromise;
+}
 
 // Load the vendored renderer exactly once, whoever asks first. Resolves with
 // the `maplibregl` global. Rejects with an UNSUPPORTED_DEVICE MapError if the
@@ -108,6 +134,8 @@ export function createMapLibreAdapter(mapConfig) {
   let routeLayersReady = false;
   let markers = null; // the last setMarkers() payload, applied when layers exist
   let markerElements = []; // live maplibregl.Marker handles
+  let reports = null; // the last setReports() payload, applied when layers exist
+  let reportLayersReady = false;
 
   const capabilities = {
     rotation: true,
@@ -207,6 +235,7 @@ export function createMapLibreAdapter(mapConfig) {
       ensureAccuracyLayer();
       if (routes) applyRoutes(routes);
       if (markers) applyMarkers(markers);
+      if (reports) applyReports(reports);
       readAttribution(onAttribution);
       if (onState && !readyReported) {
         readyReported = true;
@@ -219,10 +248,14 @@ export function createMapLibreAdapter(mapConfig) {
       readAttribution(onAttribution);
       // A style swap (the theme change does one) drops every custom source
       // and layer. When a route is showing, re-add the route layers so the
-      // route survives the swap.
+      // route survives the swap. The same applies to report pins.
       if (map.isStyleLoaded() && routes) {
         routeLayersReady = false;
         applyRoutes(routes);
+      }
+      if (map.isStyleLoaded() && reports) {
+        reportLayersReady = false;
+        applyReports(reports);
       }
     });
 
@@ -370,6 +403,103 @@ export function createMapLibreAdapter(mapConfig) {
     };
   }
 
+  // ── report pin rendering (Phase 6) ─────────────────────────────────────
+  //
+  // One GeoJSON source carries every report as a point; a single symbol
+  // layer draws them as glyph pins. Each report type gets its own sprite
+  // image (`report-pin-<type>`), rasterized once per pixel ratio from the
+  // same glyphs the report form uses. Like routes, pins are inserted
+  // before the style's first symbol layer and are held until the style is
+  // ready. Rendering is serialized so a styledata storm cannot add the
+  // layer twice.
+
+  let reportJob = Promise.resolve();
+
+  function applyReports(list) {
+    reportJob = reportJob
+      .then(async () => {
+        if (!map || destroyed || !map.isStyleLoaded()) return;
+        await ensureReportLayers();
+        if (!map || destroyed || !reportLayersReady) return;
+        try {
+          map.getSource('hm-reports').setData(reportsFeatureCollection(list));
+        } catch (err) {
+          console.warn('[map] report render failed: ' + (err && err.message));
+        }
+      })
+      .catch(() => {});
+    return reportJob;
+  }
+
+  function clearReportSource() {
+    try {
+      map
+        .getSource('hm-reports')
+        .setData({ type: 'FeatureCollection', features: [] });
+    } catch {
+      /* the source is already gone (style swapped) */
+    }
+  }
+
+  async function ensureReportLayers() {
+    if (!map || reportLayersReady || !map.isStyleLoaded()) return;
+    if (!map.getSource('hm-reports')) {
+      map.addSource('hm-reports', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+    }
+    const images = await reportImages();
+    if (!map || destroyed) return;
+    const style = map.getStyle();
+    const firstSymbol = Array.isArray(style && style.layers)
+      ? style.layers.find((l) => l.type === 'symbol')
+      : null;
+    const beforeId = firstSymbol ? firstSymbol.id : undefined;
+    // Re-add the images even when the map style was swapped underneath us:
+    // a swap drops sprites along with sources, and addImage throws on an
+    // image the style still holds.
+    for (const [id, canvas] of Object.entries(images)) {
+      if (!map.hasImage(id)) {
+        map.addImage(id, canvas, { pixelRatio: window.devicePixelRatio || 1 });
+      }
+    }
+    map.addLayer(
+      {
+        id: 'hm-reports-pins',
+        type: 'symbol',
+        source: 'hm-reports',
+        layout: {
+          'symbol-placement': 'point',
+          'icon-image': ['get', 'image'],
+          'icon-size': 1,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      },
+      beforeId,
+    );
+    reportLayersReady = true;
+  }
+
+  function reportsFeatureCollection(list) {
+    return {
+      type: 'FeatureCollection',
+      features: list
+        .filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng))
+        .map((report) => ({
+          type: 'Feature',
+          properties: {
+            id: String(report.id),
+            type: report.type || 'other',
+            effectiveStatus: report.effectiveStatus || report.status || 'pending',
+            image: reportImageId(report),
+          },
+          geometry: { type: 'Point', coordinates: [report.lng, report.lat] },
+        })),
+    };
+  }
+
   return {
     capabilities,
 
@@ -461,6 +591,18 @@ export function createMapLibreAdapter(mapConfig) {
       else clearMarkers();
     },
 
+    // `reports` is an array of { id, type, lat, lng, effectiveStatus } or
+    // null to clear. Each becomes a glyph pin; expired reports render grey.
+    // Data set before the style is ready is held and applied on load, the
+    // same way routes are.
+    setReports(nextReports) {
+      reports = Array.isArray(nextReports) && nextReports.length ? nextReports : null;
+      if (reports && map && map.isStyleLoaded()) applyReports(reports);
+      else if (!reports && map && map.isStyleLoaded() && reportLayersReady) {
+        clearReportSource();
+      }
+    },
+
     fitBounds(bounds, opts = {}) {
       if (!map || !bounds) return;
       const sw = [bounds.west, bounds.south];
@@ -531,4 +673,12 @@ function prefersReducedMotion() {
     window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
+}
+
+// The sprite id a report renders with: its type glyph, in the grey variant
+// once the report's window has ended.
+function reportImageId(report) {
+  const type = report.type || 'other';
+  const expired = (report.effectiveStatus || report.status) === 'expired';
+  return expired ? `${type}-expired` : type;
 }

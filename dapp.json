@@ -1,6 +1,10 @@
 {
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
+  "icon": {
+    "image": "brand/icon.png",
+    "emoji": "🗺️"
+  },
   "secrets": [
     {
       "key": "SEARCH_PROVIDER",
@@ -197,6 +201,41 @@
       "expectSelector": "[data-proposal-detail=\"900004\"] [data-history]"
     },
     {
+      "id": "reports.feed",
+      "name": "Reports feed lists seeded reports",
+      "path": "/#/community?view=reports",
+      "expectSelector": "[data-reports-feed][data-feed-state=\"ready\"] [data-report-row]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/community.js",
+        "public/js/components/community/**",
+        "public/js/map/report-icons.js",
+        "public/js/map/maplibre.js",
+        "public/js/map/adapter.js",
+        "public/js/map/unsupported.js",
+        "public/js/services/community.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "reports/**",
+        "server.js"
+      ]
+    },
+    {
+      "name": "Report detail opens with history",
+      "path": "/#/community?view=reports&report=920002",
+      "expectSelector": "[data-report-detail=\"920002\"] [data-history]"
+    },
+    {
+      "name": "Reports tab copy in Indonesian",
+      "path": "/#/community?view=reports&lang=id",
+      "expectText": "Laporan"
+    },
+    {
+      "name": "Reports Mine is empty for a new visitor",
+      "path": "/#/community?view=reports&filter=mine",
+      "expectText": "You have not reported anything yet"
+    },
+    {
       "name": "Language picker renders on Profile",
       "path": "/#/profile",
       "expectText": "Language"
@@ -215,6 +254,58 @@
       "name": "Indonesian map copy via language override",
       "path": "/#/?map=unconfigured&lang=id",
       "expectText": "Peta belum dikonfigurasi"
+    },
+    {
+      "id": "saved.lists",
+      "name": "Saved places screen renders the person's lists",
+      "path": "/#/saved",
+      "expectSelector": "[data-saved-host]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/saved.js",
+        "public/js/screens/place-detail.js",
+        "public/js/components/saved/**",
+        "public/js/components/place/**",
+        "public/js/app.js",
+        "public/js/services/saved.js",
+        "public/js/services/saved-places.js",
+        "public/js/router.js",
+        "public/js/i18n/**",
+        "saved/**"
+      ]
+    },
+    {
+      "name": "Saved places screen shows an honest empty state",
+      "path": "/#/saved",
+      "expectText": "Nothing saved yet"
+    },
+    {
+      "name": "A default saved list opens",
+      "path": "/#/saved?list=favorites",
+      "expectText": "Favorites"
+    },
+    {
+      "name": "Saved places copy in Indonesian",
+      "path": "/#/saved?lang=id",
+      "expectText": "Tempat tersimpan"
+    },
+    {
+      "id": "profile.activity",
+      "name": "Profile shows the person's real activity and saved count",
+      "path": "/#/profile",
+      "expectSelector": "[data-profile-activity]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/profile.js",
+        "public/js/i18n/**",
+        "saved/profiles.js",
+        "server.js"
+      ]
+    },
+    {
+      "name": "Profile activity card in Indonesian",
+      "path": "/#/profile?lang=id",
+      "expectText": "Aktivitas"
     },
     {
       "name": "Profile opens",

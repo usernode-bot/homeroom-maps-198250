@@ -29,6 +29,10 @@
 //                                         additive and backward compatible,
 //                                         held until the style is ready like
 //                                         setRoutes
+//   setReports([{ id, type, lat, lng, effectiveStatus }] | null)
+//                                      -> draw report pins (Community), or
+//                                         clear them when passed null; held
+//                                         and applied on load like routes
 //   fitBounds({ west, south, east, north }, opts?) -> fit the camera to a
 //                                         route's bounds (Directions)
 //   capabilities                       -> { rotation, touchGestures, accuracyCircle }

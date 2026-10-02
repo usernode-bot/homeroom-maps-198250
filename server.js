@@ -17,11 +17,16 @@ const { createPolicies } = require('./community/policies');
 const { createStore } = require('./community/store');
 const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
+const { createReportsStore } = require('./reports/store');
+const { createReportsRouter } = require('./reports/routes');
 const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
 const { createStore: createTripStore } = require('./trips/store');
 const { createTripsRouter } = require('./trips/routes');
+const { createStore: createSavedStore } = require('./saved/store');
+const { createSavedRouter } = require('./saved/routes');
+const { createProfiles } = require('./saved/profiles');
 
 const app = express();
 const port = PORT;
@@ -41,6 +46,17 @@ const communityStore = createStore({
 // itinerary items. All three tables are staging:private, so staging starts
 // empty and the store seeds one fake demo trip there.
 const tripStore = createTripStore({ pool });
+// Saved places (Phase 7): per-user lists and saved places in Postgres.
+// Ownership is enforced in every query and by a composite owner foreign key;
+// see saved/store.js. `profiles` reads the person's own proposals and votes
+// out of the community tables — read-only, no Phase 5 logic touched.
+const savedStore = createSavedStore({ pool });
+const profiles = createProfiles({ pool });
+
+// Community reports (Phase 6): the same policies registry is shared with the
+// proposal store, so a moderation system plugged in there hears report
+// events too (report.flagged and friends).
+const reportsStore = createReportsStore({ pool, policies: communityPolicies });
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -179,6 +195,22 @@ app.get('/api/me', (req, res) => {
   });
 });
 
+// Profile (Phase 7) — the signed-in person's own contributions, proposals
+// and votes. Read-only, and scoped to the caller's own id, so it can only
+// ever describe the person asking. Saved places live under /api/saved.
+app.get('/api/profile', async (req, res, next) => {
+  try {
+    const userId = String(req.user.id);
+    const [overview, savedPlaceIds] = await Promise.all([
+      profiles.overview(userId),
+      savedStore.savedPlaceIds(userId),
+    ]);
+    res.json({ ...overview, savedPlaces: { count: savedPlaceIds.length } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Search — the two read routes of the search service (search/index.js).
 // Both are GET under /api/, so the auth gate above covers them; the provider
 // key never leaves the server. The typed error codes from search/provider.js
@@ -266,6 +298,10 @@ app.use(
 );
 
 app.use('/api/trips', createTripsRouter({ store: tripStore, isStaging: IS_STAGING }));
+app.use(
+  '/api/reports',
+  createReportsRouter({ store: reportsStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
+);
 
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
@@ -319,22 +355,12 @@ app.get('/api/places', (req, res) =>
 app.get('/api/places/:id', (req, res) =>
   handlePlaces(req, res, ({ lang }) => placesApi.getPlaceDetails(req.params.id, { lang })));
 
-// Deferred API surface for later stages (/api/search, /api/directions,
-// /api/community and /api/places are now real). A request to any of these
-// answers a clear, honest 501 rather than a fabricated result, so no screen
-// can mistake a stub for working functionality.
-const NOT_IMPLEMENTED = [
-  '/api/saved',
-];
-for (const prefix of NOT_IMPLEMENTED) {
-  app.all(prefix + '/*', notImplemented);
-  app.all(prefix, notImplemented);
-}
-function notImplemented(_req, res) {
-  res.status(501).json({
-    error: { code: 'not_implemented', message: 'This feature is not built yet.' },
-  });
-}
+// Saved places (Phase 7) — the real router replacing the 501 stub this path
+// used to answer. GET /api/saved and GET /api/profile are public reads only
+// in the sense that they need no reviewer role; the auth gate above still
+// requires a verified platform token for every one of them, and each query is
+// scoped to that token's user.
+app.use('/api/saved', createSavedRouter({ store: savedStore }));
 
 app.use(express.static(PUBLIC_DIR));
 
@@ -398,14 +424,20 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
-  // Idempotent boot migration: the community tables (all staging:private).
-  // Place and map tables arrive with their features in later stages. The
-  // starter template's `presses` table is intentionally NOT created here (a
-  // database that already has it keeps it; nothing drops it).
+  // Idempotent boot migration: the community tables (all staging:private),
+  // the Phase 7 saved-places tables, and the report tables (reports and
+  // report_status_events public, the reaction and flag tables
+  // staging:private). Place and map tables arrive with their features in
+  // later stages. The starter template's `presses` table is intentionally
+  // NOT created here (a database that already has it keeps it; nothing
+  // drops it).
   await communityStore.migrate();
+  await savedStore.migrate();
   if (IS_STAGING) await communityStore.seedStaging();
   await tripStore.migrate();
   if (IS_STAGING) await tripStore.seedStaging();
+  await reportsStore.migrate();
+  if (IS_STAGING) await reportsStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

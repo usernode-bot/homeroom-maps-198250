@@ -1,24 +1,25 @@
-// Profile — the one tab with something real to do this stage: it shows who is
-// signed in, explains that sign-in is handled by Homeroom, and offers the
-// theme, language and units preferences. If the identity fetch fails, the
-// screen stays usable: the preference controls and the placeholders still
-// render, and the identity area shows the shared error state with a Try again
-// action.
+// Profile — who is signed in, what they have contributed, and the app's
+// preferences. If the identity fetch fails, the screen stays usable: the
+// preference controls still render, and the identity area shows the shared
+// error state with a Try again action.
 //
-// The Language and Units cards are Phase 9's only change here: they follow the
-// Appearance card's pattern exactly (same card, same segmented pill group,
-// rebuilt in place on selection) and call only the i18n layer.
+// Phase 7 added two cards, both additive and both built from the existing
+// pieces: Activity (the person's own contribution, proposal and vote counts,
+// read from /api/profile) and Saved places (the real saved-place count and a
+// link into the Saved screen). No existing card was rewritten; the Language
+// and Units cards remain Phase 9's.
 import { el } from '../components/dom.js';
 import { card } from '../components/card.js';
 import { button } from '../components/button.js';
 import { emptyState } from '../components/empty-state.js';
 import { errorState } from '../components/error-state.js';
-import { placeholderPanel } from '../components/placeholder-panel.js';
+import { spinner } from '../components/loading.js';
 import { setState } from '../state.js';
-import { fetchMe } from '../api.js';
+import { fetchMe, apiGet } from '../api.js';
 import { hasToken } from '../auth.js';
 import * as router from '../router.js';
 import { getThemePreference, setThemePreference } from '../theme.js';
+import * as router from '../router.js';
 import {
   t,
   getLanguagePreference,
@@ -85,14 +86,13 @@ export async function render(ctx) {
             text: signedOut ? t('profile.signedOutNote') : t('profile.signedInNote'),
           }),
         ]),
+    // Phase 7: real activity and saved places, loaded from the server in one
+    // request. Both are skipped entirely when there is nobody signed in.
+    ...(signedOut || loadError ? [] : profileCards()),
     themeCard(),
     languageCard(),
     unitsCard(),
     tripsCard(),
-    placeholderPanel({
-      title: t('profile.savedTitle'),
-      description: t('profile.savedBody'),
-    }),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
@@ -118,6 +118,95 @@ function tripsCard() {
     ]),
   ]);
   return c;
+}
+
+// Both Phase 7 cards are filled from ONE request to /api/profile: the
+// activity counts and the saved-place count come from the same read model, so
+// the screen asks once. Each card still owns its own loading and error state.
+function profileCards() {
+  const request = apiGet('/api/profile');
+  return [activityCard(request), savedCard(request)];
+}
+
+// The person's own activity: the real counts from /api/profile (their own
+// proposals — drafts included, since they are the author — and their votes).
+// Starts as a loading row and becomes either the counts or a short error line
+// with no invented numbers.
+function activityCard(request) {
+  const body = el('div', { class: 'mt-3 flex flex-col gap-2', dataset: { profileActivity: 'true' } }, [
+    loadingRow(),
+  ]);
+  const cardEl = card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.activity') }),
+  ]);
+  cardEl.appendChild(body);
+
+  request
+    .then((data) => {
+      const contributions = data && data.contributions ? data.contributions : {};
+      const votes = data && data.votes ? data.votes : {};
+      body.replaceChildren(
+        statRow(t('profile.proposals'), contributions.proposals || 0),
+        statRow(t('profile.implemented'), contributions.implemented || 0),
+        statRow(t('profile.votes'), votes.votes || 0),
+        el('p', { class: 'text-xs text-muted leading-relaxed', text: t('profile.activityBody') }),
+      );
+    })
+    .catch((err) => {
+      body.replaceChildren(
+        el('p', { class: 'text-sm text-muted', text: (err && err.message) || t('profile.activityError') }),
+      );
+    });
+  return cardEl;
+}
+
+function statRow(label, value) {
+  return el('div', { class: 'flex items-baseline justify-between gap-4' }, [
+    el('p', { class: 'text-sm text-muted', text: label }),
+    el('p', { class: 'text-sm font-semibold tabular-nums text-ink', text: String(value) }),
+  ]);
+}
+
+function loadingRow() {
+  return el('div', { class: 'flex items-center gap-3', role: 'status' }, [
+    spinner(),
+    el('p', { class: 'text-sm text-muted', text: t('common.loading') }),
+  ]);
+}
+
+// Saved places: the real count plus the way in. The count is a number the
+// server counted; the button opens the Saved screen.
+function savedCard(request) {
+  const body = el('div', { class: 'mt-3 flex flex-col gap-2', dataset: { profileSaved: 'true' } }, [
+    loadingRow(),
+  ]);
+  const cardEl = card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.savedTitle') }),
+  ]);
+  cardEl.appendChild(body);
+
+  request
+    .then((data) => {
+      const count = data && data.savedPlaces ? data.savedPlaces.count : 0;
+      body.replaceChildren(
+        el('p', {
+          class: 'text-sm text-muted',
+          text: count === 1 ? t('profile.savedCountOne') : t('profile.savedCount', { count }),
+        }),
+        button(t('profile.openSaved'), {
+          variant: 'secondary',
+          class: 'self-start',
+          attrs: { 'data-open-saved': 'true' },
+          onClick: () => router.navigate('saved'),
+        }),
+      );
+    })
+    .catch((err) => {
+      body.replaceChildren(
+        el('p', { class: 'text-sm text-muted', text: (err && err.message) || t('profile.activityError') }),
+      );
+    });
+  return cardEl;
 }
 
 function themeCard() {
