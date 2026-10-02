@@ -11,6 +11,7 @@ const {
   PUBLIC_DIR,
   resolveMapConfig,
   COMMUNITY_REVIEWERS,
+  LLM_ENABLED,
 } = require('./config');
 const searchApi = require('./search');
 const { createPolicies } = require('./community/policies');
@@ -27,6 +28,8 @@ const { createTripsRouter } = require('./trips/routes');
 const { createStore: createSavedStore } = require('./saved/store');
 const { createSavedRouter } = require('./saved/routes');
 const { createProfiles } = require('./saved/profiles');
+const { createAnthropicProxy } = require('./assistant/provider');
+const { createAssistantRouter } = require('./assistant/routes');
 
 const app = express();
 const port = PORT;
@@ -57,6 +60,35 @@ const profiles = createProfiles({ pool });
 // proposal store, so a moderation system plugged in there hears report
 // events too (report.flagged and friends).
 const reportsStore = createReportsStore({ pool, policies: communityPolicies });
+
+// AI assistant (Phase 11). The ONLY AI path is the platform LLM proxy,
+// enabled only when BOTH USERNODE_LLM_PROXY_URL and USERNODE_LLM_PROXY_TOKEN
+// are present (config.js LLM_ENABLED). Spends are remembered in memory for the
+// status meter; nothing about the assistant is persisted to Postgres, so there
+// is no new table and no migration.
+const assistantProvider = createAnthropicProxy();
+const assistantSpend = new Map();
+
+// Read-only services the assistant tools call. Every one is the EXISTING
+// service for its domain, so the assistant adds no query, no write and no
+// behaviour of its own: search, places, routing, trips, saved places and
+// community/reports answer exactly as they do for their own screens. The
+// viewer passed to every owner-scoped call is the verified req.user; a trip,
+// list or proposal belonging to someone else is not_found through the store's
+// existing rule. There is deliberately no getMapContext service: map context
+// is client-side and non-authoritative.
+const assistantServices = {
+  search: (q, limit) => searchApi.run('search', { q, limit }, {}),
+  getPlace: (id) => placesApi.createPlaceService().getPlaceDetails(id, {}),
+  getDirections: (params) => routingApi.run(params),
+  getTrip: (viewer, id) => tripStore.get(viewer, id),
+  listTrips: (viewer) => tripStore.list(viewer),
+  listSaved: (viewer) => savedStore.listPlaces(viewer.id),
+  listProposals: (viewer, opts = {}) =>
+    communityStore.list(viewer, { view: opts.view || 'recent', limit: opts.limit || 10 }),
+  listReports: (viewer, opts = {}) =>
+    reportsStore.list(viewer, { view: opts.view || 'recent', limit: opts.limit || 10 }),
+};
 
 // Lifecycle state. `server` is the listener captured so the shutdown handler
 // can stop accepting connections; `shuttingDown` makes /health report draining
@@ -177,7 +209,7 @@ app.get('/api/config', (_req, res) => {
       search: true,
       directions: Boolean(routing.configured),
       communityVoting: true,
-      ai: false,
+      ai: Boolean(LLM_ENABLED),
       traffic: false,
       offline: false,
     },
@@ -361,6 +393,22 @@ app.get('/api/places/:id', (req, res) =>
 // requires a verified platform token for every one of them, and each query is
 // scoped to that token's user.
 app.use('/api/saved', createSavedRouter({ store: savedStore }));
+
+// AI assistant (Phase 11) — /api/assistant/turn, /act and /status. All three
+// sit behind the auth gate above (none is added to PUBLIC_API_PATHS). `act`
+// validates and normalizes one action and mutates no domain data; every write
+// still goes through the existing domain endpoints after a user confirms it.
+// The ?demo=1 path is a read-only, staging-only canned transcript that calls
+// no proxy, no /act and no write endpoint.
+app.use(
+  '/api/assistant',
+  createAssistantRouter({
+    services: assistantServices,
+    isStaging: IS_STAGING,
+    provider: assistantProvider,
+    spendState: assistantSpend,
+  }),
+);
 
 app.use(express.static(PUBLIC_DIR));
 
