@@ -375,6 +375,13 @@ export default {
   'reports.placeRef': 'Place',
   'reports.myReportNote': 'You reported this. Others can confirm or disagree.',
 
+  // traffic legend on Directions (request #26) — route conditions from the
+  // community reports feed
+  'traffic.legendTitle': 'Traffic conditions',
+  'traffic.legendJam': 'Jam reported',
+  'traffic.legendFlowing': 'No jam reported',
+  'traffic.legendSource': 'From community reports',
+
   // assistant (Phase 11) — the AI map assistant sheet
   'assistant.title': 'Ask about the map',
   'assistant.open': 'Ask about the map',

@@ -39,10 +39,25 @@ import {
 import { getCurrentLocation, LocationError } from '../services/location.js';
 import { createNavigation, NAV_STATE } from '../services/navigation.js';
 import { createMapService } from '../services/map.js';
+import { listReports } from '../services/community.js';
+import {
+  activeJamReports,
+  coverageForGeometry,
+  routeConditions,
+  TRAFFIC_JAM_COLOR,
+  TRAFFIC_CLEAR_COLOR,
+} from '../services/traffic.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
 
 const DEFAULT_ATTRIBUTION = 'OpenStreetMap';
+
+// The traffic check's own knobs (request #26): how long a nearby feed
+// answer is reused across route re-applies, and the reports API's own
+// nearby-radius cap (reports/model.js LIMITS.nearbyRadiusKmMax), which the
+// request is clamped to for very long routes.
+const TRAFFIC_CACHE_MS = 60000;
+const NEARBY_RADIUS_CAP_KM = 200;
 
 // The live map for the screen currently mounted. Torn down on the next render
 // of this screen, so a navigation never leaves a WebGL context behind (the
@@ -168,12 +183,21 @@ export async function render(ctx) {
     dataset: { routeResults: 'true' },
     'aria-live': 'polite',
   });
+  // The traffic legend (request #26): hidden until a route shows AND the
+  // community-reports traffic check has answered. The route map drives it;
+  // it lives in the planning host so it hides with the form during live
+  // navigation.
+  const trafficLegend = el('div', {
+    class: 'flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted',
+    dataset: { trafficLegend: 'true' },
+  });
+  trafficLegend.style.display = 'none';
   // The map frame reads the session through this getter; the derived phase
   // rides along because the raw state does not carry it.
   const routeMap = createRouteMap(mapConfig, () => ({
     ...session.getState(),
     phase: session.phase(),
-  }));
+  }), trafficLegend);
 
   // ── sync ─────────────────────────────────────────────────────────────────
   let lastWaypointCount = -1;
@@ -282,6 +306,7 @@ export async function render(ctx) {
       ]),
     ]),
     resultsSlot,
+    trafficLegend,
   ]);
   // Deep-link notes ("Navigation needs a route") and any navigation-mode
   // messaging that is not part of the live banner.
@@ -612,7 +637,7 @@ function parsePointParam(name) {
 // highlight the selected one, fit the camera to it, and clear obsolete
 // geometry whenever the request changes.
 
-function createRouteMap(mapConfig, getLatestState) {
+function createRouteMap(mapConfig, getLatestState, trafficLegend) {
   const container = el('div', {
     class: 'relative h-[60vh] overflow-hidden rounded-card border border-line bg-surface-raised',
     dataset: { directionsMapFrame: 'true' },
@@ -645,6 +670,19 @@ function createRouteMap(mapConfig, getLatestState) {
   let ready = false;
   let lastApplied = null; // identity key of the last routes+selection applied
   let navOverlayNode = null; // the navigation view's overlay, while one is live
+
+  // ── traffic conditions (request #26) ────────────────────────────────────
+  //
+  // The route's traffic comes from the one source the app already has: the
+  // community reports feed (Phase 6). One nearby query, centred so it covers
+  // the drawn line, is filtered to the active jam-capable reports and cut
+  // into per-segment pieces by services/traffic.js. The pieces attach to the
+  // selected route as a red overlay and drive the legend. A failed query
+  // shows no legend and no colours: an unavailable source is an honest
+  // absence, never a guess.
+  const trafficCache = new Map(); // coverage key -> { at, items }, 60 s
+  let trafficState = null; // { key, state: 'loading'|'resolved'|'failed', jammed }
+  let trafficGeneration = 0; // orphans in-flight fetches on route change
 
   function mount() {
     if (activeService) {
@@ -700,27 +738,147 @@ function createRouteMap(mapConfig, getLatestState) {
 
   function apply(state) {
     if (!ready || !service || !state) return;
-    const key =
-      state.phase === 'routes'
-        ? `routes:${state.selectedRoute}:${state.routes.length}:${state.routes[state.selectedRoute] ? state.routes[state.selectedRoute].geometry.length : 0}`
-        : state.phase;
+    const key = applyKey(state);
     if (key === lastApplied) return;
     lastApplied = key;
     if (state.phase === 'routes') {
-      service.setRoutes(
-        state.routes.map((route, i) => ({
-          coordinates: route.geometry,
-          selected: i === state.selectedRoute,
-        })),
-      );
       const selected = state.routes[state.selectedRoute];
+      // Traffic pieces for this exact route, when the derivation has already
+      // answered for it; otherwise the plain line draws first and the red
+      // pieces arrive when the reports query resolves.
+      const jammed = trafficPiecesFor(key);
+      service.setRoutes(
+        state.routes.map((route, i) => {
+          const item = {
+            coordinates: route.geometry,
+            selected: i === state.selectedRoute,
+          };
+          if (i === state.selectedRoute && jammed) item.traffic = { jammed };
+          return item;
+        }),
+      );
       const bounds = geometryBounds(selected && selected.geometry);
       if (bounds) service.fitBounds(bounds);
+      refreshTraffic(key, selected && selected.geometry);
     } else {
       // Form, loading or error: no route to draw. Obsolete geometry never
-      // outlives its request.
+      // outlives its request — the traffic pieces and the legend with it.
       service.setRoutes(null);
+      resetTraffic();
     }
+  }
+
+  // The identity key of a state's routes+selection, shared by apply()'s
+  // dedupe and the traffic state.
+  function applyKey(state) {
+    return state.phase === 'routes'
+      ? `routes:${state.selectedRoute}:${state.routes.length}:${state.routes[state.selectedRoute] ? state.routes[state.selectedRoute].geometry.length : 0}`
+      : state.phase;
+  }
+
+  // The jammed pieces already derived for exactly this route key, or null.
+  function trafficPiecesFor(key) {
+    return trafficState &&
+      trafficState.key === key &&
+      trafficState.state === 'resolved' &&
+      trafficState.jammed.length
+      ? trafficState.jammed
+      : null;
+  }
+
+  function resetTraffic() {
+    trafficGeneration += 1; // orphan any in-flight fetch
+    trafficState = null;
+    renderTrafficLegend();
+  }
+
+  // Ask the community feed what the reports say about this route. Resolves
+  // into jammed pieces + legend; never throws into the caller.
+  async function refreshTraffic(key, geometry) {
+    if (!geometry || geometry.length < 2) return;
+    if (
+      trafficState &&
+      trafficState.key === key &&
+      (trafficState.state === 'resolved' || trafficState.state === 'failed')
+    ) {
+      // Already answered (positively or negatively) for this exact route.
+      renderTrafficLegend();
+      return;
+    }
+    const generation = ++trafficGeneration;
+    trafficState = { key, state: 'loading', jammed: [] };
+    renderTrafficLegend();
+    try {
+      const coverage = coverageForGeometry(geometry);
+      const cacheKey = coverage
+        ? `${coverage.near.lat.toFixed(3)},${coverage.near.lng.toFixed(3)},${coverage.radiusKm}`
+        : null;
+      let cached = cacheKey ? trafficCache.get(cacheKey) : null;
+      if (cached && Date.now() - cached.at > TRAFFIC_CACHE_MS) cached = null;
+      if (!cached && coverage) {
+        const feed = await listReports('nearby', {
+          near: coverage.near,
+          radiusKm: Math.min(coverage.radiusKm, NEARBY_RADIUS_CAP_KM),
+        });
+        cached = { at: Date.now(), items: activeJamReports((feed && feed.items) || []) };
+        trafficCache.set(cacheKey, cached);
+      }
+      if (generation !== trafficGeneration) return;
+      const { jammed } = routeConditions(geometry, cached ? cached.items : []);
+      trafficState = { key, state: 'resolved', jammed };
+    } catch (err) {
+      if (generation !== trafficGeneration) return;
+      console.warn('[directions] traffic check failed: ' + (err && err.message));
+      trafficState = { key, state: 'failed', jammed: [] };
+    }
+    renderTrafficLegend();
+    applyTrafficPieces();
+  }
+
+  // Re-draw the routes with the traffic pieces attached, bypassing apply()'s
+  // dedupe: the route itself has not changed, only its overlay has.
+  function applyTrafficPieces() {
+    if (!ready || !service || !trafficState) return;
+    const state = getLatestState();
+    if (!state || state.phase !== 'routes') return;
+    const jammed = trafficPiecesFor(applyKey(state));
+    if (!jammed) return;
+    service.setRoutes(
+      state.routes.map((route, i) => {
+        const item = {
+          coordinates: route.geometry,
+          selected: i === state.selectedRoute,
+        };
+        if (i === state.selectedRoute) item.traffic = { jammed };
+        return item;
+      }),
+    );
+  }
+
+  function renderTrafficLegend() {
+    if (!trafficLegend) return;
+    if (!trafficState || trafficState.state !== 'resolved') {
+      trafficLegend.style.display = 'none';
+      trafficLegend.replaceChildren();
+      return;
+    }
+    trafficLegend.style.display = '';
+    trafficLegend.replaceChildren(
+      el('span', { class: 'font-medium text-ink', text: t('traffic.legendTitle') }),
+      legendSwatch(TRAFFIC_JAM_COLOR, t('traffic.legendJam')),
+      legendSwatch(TRAFFIC_CLEAR_COLOR, t('traffic.legendFlowing')),
+      el('span', { text: t('traffic.legendSource') }),
+    );
+  }
+
+  function legendSwatch(color, label) {
+    return el('span', { class: 'inline-flex items-center gap-1.5' }, [
+      el('span', {
+        class: 'inline-block h-2.5 w-6 rounded-full',
+        style: 'background: ' + color,
+      }),
+      el('span', { text: label }),
+    ]);
   }
 
   function showOverlay(node) {
@@ -779,6 +937,7 @@ function createRouteMap(mapConfig, getLatestState) {
       apply(getLatestState());
     },
     destroy() {
+      trafficGeneration += 1; // orphan any in-flight traffic fetch
       if (service) service.destroy();
       service = null;
       ready = false;
