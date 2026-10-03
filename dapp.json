@@ -393,6 +393,12 @@
       "reason": "Shows your location on the map"
     }
   ],
+  "governance": {
+    "approvers": "anyone",
+    "approvals": {
+      "atLeast": 1
+    }
+  },
   "llm": {
     "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",
     "suggested_daily_cap_cents": 200
