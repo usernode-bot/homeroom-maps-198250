@@ -22,7 +22,7 @@ import { createMapService } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
 import { mapControls } from '../map/controls.js';
-import { createSearchSession } from '../services/search.js';
+import { createSearchSession, setOfflineSearchCenter, bootQuery } from '../services/search.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 import { createAssistantPanel } from '../components/assistant/panel.js';
@@ -50,6 +50,8 @@ export async function render(ctx) {
     activeService.destroy();
     activeService = null;
   }
+  // A fresh screen: the previous screen's map center no longer applies.
+  setOfflineSearchCenter(null);
 
   const mapConfig = (getState().config && getState().config.map) || null;
   const force = demoState();
@@ -197,6 +199,15 @@ export async function render(ctx) {
 
   sync(session.getState());
 
+  // A `?q=` deep link runs one committed query at boot, so a URL reaches the
+  // results (and offline-results) state without a click. It only ever feeds a
+  // query string into the same session the input drives.
+  const initialQuery = bootQuery();
+  if (initialQuery) {
+    session.input(initialQuery);
+    session.commit();
+  }
+
   const config = mapConfig && mapConfig.configured
     ? mapConfig
     : {
@@ -253,6 +264,16 @@ function onReady(service, view) {
   hideOverlay(view);
   view.controls.replaceChildren(liveControls(service, view));
   view.viewRef.service = service;
+  // Offline search picks the region covering the map center when the renderer
+  // exposes one; the keyless adapter may not, in which case the service falls
+  // back to the most recently completed region. Either way nothing is guessed.
+  if (service && typeof service.getCenter === 'function') {
+    try {
+      setOfflineSearchCenter(service.getCenter());
+    } catch {
+      setOfflineSearchCenter(null);
+    }
+  }
 }
 
 function onFailure(service, view, err) {

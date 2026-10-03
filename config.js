@@ -137,6 +137,15 @@ const OFFLINE_MAX_STORAGE_MB = Math.max(
   Number.parseInt(process.env.OFFLINE_MAX_STORAGE_MB || '2048', 10) || 0,
 ) || 2048;
 
+// The offline SEARCH operator switch (Phase 12B). Searching regions a device
+// has already downloaded is a device-local read with no provider traffic, so
+// it is independent of the B2 download gate: it may be on while downloads are
+// off. Default true; the switch can only turn offline search off, never
+// invent an index or a network call.
+const OFFLINE_SEARCH_ENABLED = !/^(false|0|no|off)$/i.test(
+  String(process.env.OFFLINE_SEARCH_ENABLED || 'true').trim(),
+);
+
 // Search provider configuration. `SEARCH_PROVIDER` names the adapter the
 // search service uses (see search/providers/); it defaults to Photon, which
 // needs no key and no billing, so the app works out of the box and staging
@@ -237,6 +246,7 @@ module.exports = {
   resolveMapConfig,
   OFFLINE_ENABLED,
   OFFLINE_MAX_STORAGE_MB,
+  OFFLINE_SEARCH_ENABLED,
   SEARCH_PROVIDER,
   PHOTON_URL,
   PELIAS_URL,

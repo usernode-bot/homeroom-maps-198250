@@ -58,6 +58,12 @@
       "description": "Per-device storage budget for offline map areas, in megabytes. The Offline Areas screen reports actual usage against this budget.",
       "required": false,
       "default": "2048"
+    },
+    {
+      "key": "OFFLINE_SEARCH_ENABLED",
+      "description": "Operator switch for offline search (Phase 12B). Turned on by default. It is independent of the offline-download gate: searching regions a device has already stored is a device-local read, so it still works while tile downloads are closed. Setting it off makes the offline search states honest; online search is unaffected.",
+      "required": false,
+      "default": "true"
     }
   ],
   "visibility": {
@@ -429,6 +435,48 @@
       ],
       "allowConsoleErrors": true,
       "expectText": "Save Staging demo cafe to favorites"
+    },
+    {
+      "id": "offline.search",
+      "name": "Offline search returns downloaded places marked Offline",
+      "path": "/#/?seed=1&offline=1&q=Staging%20demo%20place",
+      "expectSelector": "[data-offline-badge]",
+      "expectText": "Offline search covers only Staging demo area, a downloaded area on this device.",
+      "visual": true,
+      "impact": [
+        "public/js/services/offline-search*.js",
+        "public/js/services/search.js",
+        "public/js/services/places-model.js",
+        "public/js/components/search/**",
+        "public/js/components/place/**",
+        "public/js/screens/home.js",
+        "public/js/screens/discover.js",
+        "public/js/app.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "offline/search-config.js",
+        "tests/fixtures/offline-search-place.mvt",
+        "server.js",
+        "config.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Offline search with no downloaded areas is the honest empty state",
+      "path": "/#/?offline=1&q=Staging%20demo%20place",
+      "expectSelector": "[data-offline-unavailable=\"no_regions\"]",
+      "expectText": "No offline areas on this device"
+    },
+    {
+      "name": "Offline search copy in Indonesian",
+      "path": "/#/?seed=1&offline=1&q=Staging%20demo%20place&lang=id",
+      "expectText": "Pencarian offline hanya mencakup Staging demo area"
+    },
+    {
+      "name": "Online search path is unchanged and shows no Offline badge",
+      "path": "/#/discover",
+      "expectSelector": "[data-places-search]",
+      "expectText": "Find a place"
     }
   ],
   "permissions": [

@@ -16,7 +16,7 @@ import { errorState } from '../components/error-state.js';
 import { spinner } from '../components/loading.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createPlaceCard } from '../components/place/place-card.js';
-import { DEBOUNCE_MS, MIN_QUERY_LENGTH, fetchSearch } from '../services/search.js';
+import { DEBOUNCE_MS, MIN_QUERY_LENGTH, fetchSearch, isOffline } from '../services/search.js';
 import { fetchPlace } from '../services/places.js';
 import { placeFromSearchResult } from '../services/places-model.js';
 import { createPlaceDetailSession } from '../services/place-detail.js';
@@ -145,11 +145,46 @@ export async function render(ctx) {
       );
       return;
     }
+    // Offline results name the downloaded area they came from and, when the
+    // device is actually connected, say the fallback happened; the manifest's
+    // attribution is shown exactly as it is stored.
+    const first = places[0];
+    const notices = [];
+    if (first && first.offline) {
+      if (!isOffline()) {
+        notices.push(
+          el('p', {
+            class: 'text-[11px] text-muted',
+            dataset: { offlineNotice: 'degraded' },
+            text: t('offline.searchDegraded', { region: first.regionName || '' }),
+          }),
+        );
+      }
+      notices.push(
+        el('p', {
+          class: 'text-[11px] text-muted',
+          dataset: { offlineScope: 'true' },
+          text: t('offline.searchScope', { region: first.regionName || '' }),
+        }),
+      );
+      if (first.attribution) {
+        notices.push(
+          el('p', {
+            class: 'text-[11px] text-muted',
+            dataset: { offlineAttribution: 'true' },
+            text: t('offline.searchAttribution', { attribution: first.attribution }),
+          }),
+        );
+      }
+    }
     listHost.replaceChildren(
       el(
         'div',
         { class: 'flex flex-col gap-2', dataset: { placeList: 'true' } },
-        places.map((place) => createPlaceCard(place, { onSelect: openDetail })),
+        [
+          ...notices,
+          ...places.map((place) => createPlaceCard(place, { onSelect: openDetail })),
+        ],
       ),
     );
   }
@@ -157,6 +192,31 @@ export async function render(ctx) {
   function renderError(err, q) {
     if (mode !== 'list') return;
     const rateLimited = err && err.code === 'rate_limited';
+    // Offline, the honest unavailable states have their own copy, chosen by
+    // the typed reason the offline service carries. Online errors are
+    // untouched.
+    const offlineReason =
+      err && err.code === 'offline_unavailable' ? err.reason : null;
+    const offlineCopy = offlineReason && {
+      no_regions: { title: t('offline.searchNoAreasTitle'), body: t('offline.searchNoAreasBody') },
+      unsupported_browser: {
+        title: t('offline.searchUnsupportedTitle'),
+        body: t('offline.searchUnsupportedBody'),
+      },
+      disabled: {
+        title: t('offline.searchDisabledTitle'),
+        body: t('offline.searchDisabledBody'),
+      },
+    }[offlineReason];
+    if (offlineCopy) {
+      listHost.replaceChildren(
+        emptyState({
+          title: offlineCopy.title,
+          description: offlineCopy.body,
+        }),
+      );
+      return;
+    }
     listHost.replaceChildren(
       errorState({
         title: rateLimited ? t('search.errorBusy') : t('search.errorUnavailable'),

@@ -456,4 +456,30 @@ export default {
   'profile.offlineTitle': 'Offline Areas',
   'profile.offlineBody': 'Download map areas for use without a connection.',
 
+  // offline search (Phase 12B). Results from downloaded areas are marked
+  // Offline; the words Offline, Offline Areas, No results and Try again are
+  // shared with Phase 12A. Hand-written, and no em dashes anywhere.
+  'offline.searchBadge': 'Offline',
+  'offline.searchScope': 'Offline search covers only {region}, a downloaded area on this device.',
+  'offline.searchNoResultsTitle': 'No results',
+  'offline.searchNoResults': 'No offline match for "{query}" in {region}.',
+  'offline.searchNoAreasTitle': 'No offline areas on this device',
+  'offline.searchNoAreasBody':
+    'Download a map area in Offline Areas to search it without a connection.',
+  'offline.searchUnsupportedTitle': 'This browser cannot search offline areas',
+  'offline.searchUnsupportedBody':
+    'Offline search needs IndexedDB, which this browser does not provide. Online search still works.',
+  'offline.searchDisabledTitle': 'Offline search is turned off',
+  'offline.searchDisabledBody':
+    'Offline search is switched off for this app. Online search still works.',
+  'offline.searchAttribution': 'Offline data: {attribution}',
+  'offline.searchDegraded': 'You are offline. Showing downloaded results for {region}.',
+  'offline.searchKindCountry': 'Country',
+  'offline.searchKindRegion': 'Region',
+  'offline.searchKindCity': 'City',
+  'offline.searchKindTown': 'Town',
+  'offline.searchKindVillage': 'Village',
+  'offline.searchKindSuburb': 'Neighbourhood',
+  'offline.searchKindPlace': 'Place',
+
 };

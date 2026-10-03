@@ -1,6 +1,8 @@
-// Locale parity for the offline-areas strings (Phase 12A). The Indonesian
-// bundle must fully cover the English offline.* and profile.offline* keys,
-// placeholders must match, and no user-facing string carries an em dash.
+// Locale parity for the offline strings (Phase 12A) and the offline search
+// strings (Phase 12B). The Indonesian bundle must fully cover the English
+// offline.* and profile.offline* keys, placeholders must match, and no
+// user-facing string carries an em dash. The offline.search* keys are covered
+// by the same offline. prefix.
 'use strict';
 
 const test = require('node:test');
@@ -57,6 +59,16 @@ test('the spec word table is used verbatim', () => {
   assert.equal(id['offline.blockedTitle'], 'Pengunduhan offline tidak tersedia');
 });
 
+test('the offline search word table is used verbatim', () => {
+  // Phase 12B shares the Phase 12A words and adds no synonyms.
+  assert.equal(en['offline.searchBadge'], 'Offline');
+  assert.equal(id['offline.searchBadge'], 'Offline');
+  assert.equal(en['offline.searchNoResultsTitle'], 'No results');
+  assert.equal(id['offline.searchNoResultsTitle'], 'Tidak ada hasil');
+  assert.equal(en['offline.open'], 'Open offline areas');
+  assert.equal(id['offline.open'], 'Buka area offline');
+});
+
 test('offline interpolation placeholders match between the bundles', () => {
   const placeholders = (tpl) => [...String(tpl).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
   for (const key of keysOf(en)) {
@@ -90,6 +102,16 @@ test('every offline key the screen and components call exists in both bundles', 
     'offline.failedTitle', 'offline.failedBody', 'offline.storageLimitTitle',
     'offline.storageLimitBody', 'offline.presetZoom', 'offline.presetSize',
     'profile.offlineTitle', 'profile.offlineBody',
+    // Phase 12B offline search. Every key the search service, the results
+    // panel, the Place card and the two screens call.
+    'offline.searchBadge', 'offline.searchScope', 'offline.searchNoResultsTitle',
+    'offline.searchNoResults', 'offline.searchNoAreasTitle', 'offline.searchNoAreasBody',
+    'offline.searchUnsupportedTitle', 'offline.searchUnsupportedBody',
+    'offline.searchDisabledTitle', 'offline.searchDisabledBody',
+    'offline.searchAttribution', 'offline.searchDegraded',
+    'offline.searchKindCountry', 'offline.searchKindRegion', 'offline.searchKindCity',
+    'offline.searchKindTown', 'offline.searchKindVillage', 'offline.searchKindSuburb',
+    'offline.searchKindPlace',
   ];
   const missingEn = used.filter((k) => typeof en[k] !== 'string');
   const missingId = used.filter((k) => typeof id[k] !== 'string');
