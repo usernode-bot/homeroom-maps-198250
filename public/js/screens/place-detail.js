@@ -24,8 +24,6 @@ import { spinner } from '../components/loading.js';
 import { createPlaceCard } from '../components/place/place-card.js';
 // Phase 7: saving a place from its detail view. Additive — the sections below
 // are untouched, and the button only ever reflects the server's real answer.
-import { createSaveButton } from '../components/place/save-button.js';
-import { openListPicker } from '../components/saved/list-picker.js';
 import * as mapService from '../services/map.js';
 import { t } from '../i18n/index.js';
 import {
@@ -210,9 +208,9 @@ function ratingSection(place) {
   ]);
 }
 
-export function createPlaceDetailView({ session, onBack }) {
+export function createPlaceDetailView({ session, onBack, onSave }) {
   const root = el('div', { class: 'flex flex-col gap-4', dataset: { placeDetail: 'true' } });
-  const backBtn = el('div', {}, [
+  const backRow = el('div', { class: 'flex items-center gap-2' }, [
     el(
       'button',
       {
@@ -223,29 +221,35 @@ export function createPlaceDetailView({ session, onBack }) {
       },
       ['Back'],
     ),
+    // Save: the caller decides whether this place can be saved (signed in,
+    // coordinates present); without onSave there is no button at all.
+    typeof onSave === 'function'
+      ? el(
+          'button',
+          {
+            type: 'button',
+            class:
+              'rounded-pill border border-line bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+            dataset: { placeDetailSave: 'true' },
+          },
+          ['Save'],
+        )
+      : null,
   ]);
-  backBtn.querySelector('[data-place-detail-back]').addEventListener('click', () => onBack && onBack());
-  root.appendChild(backBtn);
-
-  // The saved-place actions for THIS place. Built once from the session's
-  // place and re-appended on every update, so the button keeps its state
-  // across the loading -> ready transition instead of re-checking each time.
-  const initialPlace = session.getState().place || {};
-  const saveActions = el('div', { class: 'flex flex-wrap items-center gap-2', dataset: { placeSaveActions: 'true' } }, [
-    createSaveButton(initialPlace),
-    el(
-      'button',
-      {
-        type: 'button',
-        class:
-          'rounded-pill border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
-        text: t('saved.addToLists'),
-        dataset: { placeAddToList: 'true' },
-        onClick: () => openListPicker({ place: initialPlace }),
-      },
-      [],
-    ),
-  ]);
+  backRow.querySelector('[data-place-detail-back]').addEventListener('click', () => onBack && onBack());
+  const saveBtn = backRow.querySelector('[data-place-detail-save]');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      try {
+        await onSave(session.getState().place);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+  }
+  root.appendChild(backRow);
 
   function update(state) {
     const place = state.place || {};
@@ -283,8 +287,7 @@ export function createPlaceDetailView({ session, onBack }) {
     }
 
     root.replaceChildren(
-      backBtn,
-      saveActions,
+      backRow,
       header,
       ...strips,
       photosSection(place),

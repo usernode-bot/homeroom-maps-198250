@@ -1,19 +1,14 @@
-// Saved places model — the pure, I/O-free rules for Phase 7.
+// Saved places model — pure, I/O-free rules.
 //
-// Everything that decides WHAT is allowed lives here: the default lists, the
-// list-name limits, the shape of a place reference, and the validation of
-// every input the routes accept. saved/store.js enforces these against
-// Postgres; tests/saved.model.test.js drives them without a database. Keeping
-// the rules in one synchronous module means the server and the tests can never
-// disagree about them.
-//
-// A saved place references a REAL place: `place_id` (the stable id the search
-// stack already gives every result, search/normalize.js) plus whatever display
-// values actually came with it. Nothing here invents a place, and no second
-// place model is introduced — the display fields are a cache of the real
-// normalized search/place result so a saved list can render without asking a
-// provider again.
+// The server-side twin of community/model.js: everything that decides WHAT
+// is allowed lives here — who may see or write a list, what a valid list,
+// place snapshot, note, suggestion and comment look like — and store.js
+// enforces the rules against Postgres inside transactions. tests/
+// saved.model.test.js drives this module without a database, so the server
+// and the tests can never disagree about the rules.
 'use strict';
+
+const crypto = require('crypto');
 
 // A typed error the routes turn into the app's standard JSON error shape.
 class SavedError extends Error {
@@ -26,184 +21,244 @@ class SavedError extends Error {
   }
 }
 
-// The four default lists every person starts with. `slug` is the stable
-// identifier the API and the database use; `name` is the default display name
-// the owner may rename (the slug never changes, so integrations keep working
-// after a rename). `kind` is 'default' or 'custom'; `system_key` ties a
-// default list to this enum and is NULL for custom lists — which is exactly
-// what lets duplicate prevention differ between the two.
-const DEFAULT_LISTS = [
-  { slug: 'favorites', name: 'Favorites' },
-  { slug: 'want_to_visit', name: 'Want to Visit' },
-  { slug: 'travel', name: 'Travel' },
-  { slug: 'restaurants', name: 'Restaurants' },
-];
-
-const DEFAULT_LIST_SLUGS = DEFAULT_LISTS.map((l) => l.slug);
+// Visibility levels. `link` is the Shared level: anyone in Homeroom holding
+// the list's unguessable share token can view it (never write). Per-person
+// sharing is a later extension; the CHECK constraint and share_token column
+// leave room for it without migrating existing rows.
+const VISIBILITIES = ['private', 'link', 'public'];
 
 const LIMITS = {
-  listNameMin: 1,
-  listNameMax: 60,
-  maxCustomLists: 50,
-  placeIdMax: 300,
+  nameMin: 1,
+  nameMax: 60,
+  noteMax: 500,
+  messageMax: 200,
+  commentMin: 1,
+  commentMax: 1000,
   placeNameMax: 200,
-  placeAddressMax: 400,
-  placeCategoryMax: 60,
-  placeSubcategoryMax: 60,
-  placeSourceMax: 60,
+  placeAddressMax: 300,
+  placeKindMax: 50,
+  placeProviderMax: 50,
+  placeIdMax: 200,
+  pageMax: 50,
+  pageDefault: 20,
 };
 
-// The slug a seeded default list is recognised by. Only ever compared against
-// the four above; it is never re-derived from user input.
-function isDefaultSlug(slug) {
-  return DEFAULT_LIST_SLUGS.includes(slug);
+// The curated palette the form offers. Validation is membership in this set,
+// so an emoji is always one the UI itself can render.
+const EMOJIS = [
+  '⭐', '🧭', '✈️', '🍴', '☕', '🥐', '🌅', '🌊',
+  '🏛️', '🌳', '⛰️', '🏖️', '🎡', '🛍️', '🎨', '🎭',
+  '🍺', '🍜', '🚲', '⛺', '📸', '💗', '🗺️', '🏪',
+];
+const EMOJI_SET = new Set(EMOJIS);
+
+// The four roadmap-P7 defaults, created lazily the first time a person opens
+// their lists (production behaviour for every user, never staging seeding).
+const DEFAULT_LISTS = [
+  { name: 'Favorites', emoji: '⭐' },
+  { name: 'Want to Visit', emoji: '🧭' },
+  { name: 'Travel', emoji: '✈️' },
+  { name: 'Restaurants', emoji: '🍴' },
+];
+
+// A search result's id is a provider id, or a "lat,lon" fallback when the
+// provider gave none (see places-model.js placeFromSearchResult). Only the
+// former identifies a place across providers; the fallback is just geometry.
+const COORDINATE_ID = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/;
+
+// ── roles and permissions ────────────────────────────────────────────────
+
+// `viewer` is { id, username }. `list` needs { ownerId, visibility,
+// shareToken } — the shape toProposal-style readers build from the row.
+function isOwner(viewer, list) {
+  return Boolean(viewer && list && String(viewer.id) === String(list.ownerId));
 }
 
-function savedError(code, message, opts) {
-  return new SavedError(code, message, opts);
+// Every mutation on a list — its details, its items, its suggestions — is
+// the owner's alone, regardless of visibility.
+function canWrite(viewer, list) {
+  return isOwner(viewer, list);
 }
+
+// The one visibility predicate every store read and write goes through. A
+// viewer who cannot see a list is answered "not found" by the store, never
+// "forbidden", so a private list's existence never leaks (the same
+// convention community/store.js readRow uses for drafts).
+function canView(viewer, list, { key = null } = {}) {
+  if (!viewer || !list) return false;
+  if (isOwner(viewer, list)) return true;
+  if (list.visibility === 'public') return true;
+  if (list.visibility === 'link') {
+    return Boolean(key) && Boolean(list.shareToken) && String(key) === String(list.shareToken);
+  }
+  return false;
+}
+
+// ── validation ───────────────────────────────────────────────────────────
 
 function cleanText(raw) {
   return typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
 }
 
-// A trimmed string capped at `max`, or null when nothing real is present.
-function optionalText(raw, max) {
-  const value = cleanText(raw);
-  if (!value) return null;
-  return value.slice(0, max);
+function cleanMultiline(raw) {
+  return typeof raw === 'string'
+    ? raw.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+    : '';
 }
 
-// List names: whitespace collapsed, length checked, per-field error message.
-function validateListName(raw, fields, { field = 'name' } = {}) {
-  const name = cleanText(raw);
-  if (name.length < LIMITS.listNameMin) {
-    fields[field] = 'Give the list a name.';
-    return '';
+// Create: every field required (with defaults). Patch: only provided fields
+// change; the store merges and revalidates the whole, like proposals do.
+function validateListInput(raw, { partial = false } = {}) {
+  const fields = {};
+  const body = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+
+  const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+
+  if (!partial || has('name')) {
+    const name = cleanText(body.name);
+    if (name.length < LIMITS.nameMin) fields.name = 'Give the list a name.';
+    else if (name.length > LIMITS.nameMax) {
+      fields.name = `List names are limited to ${LIMITS.nameMax} characters.`;
+    } else out.name = name;
   }
-  if (name.length > LIMITS.listNameMax) {
-    fields[field] = `List names are limited to ${LIMITS.listNameMax} characters.`;
-    return '';
+
+  if (!partial || has('emoji')) {
+    const emoji = typeof body.emoji === 'string' ? body.emoji : '';
+    if (!emoji) out.emoji = EMOJIS[0];
+    else if (!EMOJI_SET.has(emoji)) fields.emoji = 'Choose an emoji from the palette.';
+    else out.emoji = emoji;
   }
-  return name;
+
+  if (!partial || has('visibility')) {
+    const visibility = typeof body.visibility === 'string' ? body.visibility : '';
+    if (!visibility) out.visibility = 'private';
+    else if (!VISIBILITIES.includes(visibility)) fields.visibility = 'Choose Private, Shared or Public.';
+    else out.visibility = visibility;
+  }
+
+  if (Object.keys(fields).length) {
+    throw new SavedError('invalid_list', 'Some details need fixing.', { fields });
+  }
+  return out;
 }
 
-// A place reference. `id` is required (it is the link to the real place) and
-// the display fields are optional, stored as given: never fabricated.
-function validatePlace(raw, fields, { field = 'place' } = {}) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    fields[field] = 'A place is required.';
-    return null;
+// The saved place is a SNAPSHOT of a search result at save time: items are
+// never re-fetched or enriched, so nothing on them can silently change or
+// be fabricated (no place provider is connected; see places-model.js).
+function validatePlace(raw) {
+  const fields = {};
+  const body = raw && typeof raw === 'object' ? raw : {};
+  const name = cleanText(body.name);
+  if (!name) fields.place = 'A place needs a name.';
+  else if (name.length > LIMITS.placeNameMax) {
+    fields.place = `Place names are limited to ${LIMITS.placeNameMax} characters.`;
   }
-  const id = cleanText(raw.id);
-  if (!id) {
-    fields[field] = 'The place needs an id.';
-    return null;
+
+  const lat = Number(body.lat);
+  const lng = Number(body.lng);
+  if (
+    !Number.isFinite(lat) || lat < -90 || lat > 90 ||
+    !Number.isFinite(lng) || lng < -180 || lng > 180
+  ) {
+    fields.place = fields.place || 'The place coordinates are out of range.';
   }
-  if (id.length > LIMITS.placeIdMax) {
-    fields[field] = 'That place id is too long.';
-    return null;
+
+  if (Object.keys(fields).length) {
+    throw new SavedError('invalid_place', 'This place could not be saved.', { fields });
   }
-  const lat = raw.lat == null ? null : Number(raw.lat);
-  const lng = raw.lng == null ? null : Number(raw.lng);
-  const hasLat = Number.isFinite(lat);
-  const hasLng = Number.isFinite(lng);
-  if (hasLat !== hasLng) {
-    fields[field] = 'The place coordinates are incomplete.';
-    return null;
-  }
-  if (hasLat && (lat < -90 || lat > 90 || lng < -180 || lng > 180)) {
-    fields[field] = 'The place coordinates are out of range.';
-    return null;
-  }
+
+  const clip = (value, max) => {
+    const s = cleanText(value);
+    return s ? (s.length > max ? s.slice(0, max) : s) : null;
+  };
+  const id = cleanText(body.id);
   return {
-    id,
-    name: optionalText(raw.name, LIMITS.placeNameMax),
-    address: optionalText(raw.address, LIMITS.placeAddressMax),
-    category: optionalText(raw.category, LIMITS.placeCategoryMax),
-    subcategory: optionalText(raw.subcategory, LIMITS.placeSubcategoryMax),
-    lat: hasLat ? lat : null,
-    lng: hasLng ? lng : null,
-    source: optionalText(raw.source, LIMITS.placeSourceMax),
+    name,
+    lat,
+    lng,
+    address: clip(body.address, LIMITS.placeAddressMax),
+    kind: clip(body.kind, LIMITS.placeKindMax),
+    provider: clip(body.provider, LIMITS.placeProviderMax),
+    id: id ? id.slice(0, LIMITS.placeIdMax) : null,
   };
 }
 
-// A place id on its own (unsave, membership, "is saved?"). Ids are opaque
-// strings, so this only rejects empty or absurdly long values; anything else
-// simply will not match a stored row.
-function validatePlaceId(raw) {
-  const id = cleanText(raw);
-  if (!id) throw savedError('invalid_request', 'A place id is required.');
-  if (id.length > LIMITS.placeIdMax) {
-    throw savedError('invalid_request', 'That place id is too long.');
+// The stable identity of a saved place within one list: a real provider id
+// when the search result carried one, else its rounded coordinates. The
+// UNIQUE (list_id, place_key) constraint makes "no duplicates in a list" a
+// database fact.
+function placeKeyOf(place) {
+  if (place.id && !COORDINATE_ID.test(place.id)) {
+    return `${place.provider || 'search'}:${place.id}`;
   }
-  return id;
+  return `coord:${place.lat.toFixed(5)},${place.lng.toFixed(5)}`;
 }
 
-// A list id from the path or body. Positive integers only, so a malformed id
-// is a 400 rather than a query that scans for something it cannot find.
-function validateListId(raw) {
-  const text = typeof raw === 'string' || typeof raw === 'number' ? String(raw).trim() : '';
-  if (!/^\d{1,18}$/.test(text)) {
-    throw savedError('invalid_request', 'That list id is not valid.');
+// The owner's one paragraph about an item. Empty becomes null (no note).
+function validateNote(raw) {
+  const note = cleanMultiline(raw);
+  if (note.length > LIMITS.noteMax) {
+    throw new SavedError('invalid_place', 'The note is too long.', {
+      fields: { note: `Notes are limited to ${LIMITS.noteMax} characters.` },
+    });
   }
-  const id = Number.parseInt(text, 10);
-  if (!Number.isSafeInteger(id) || id <= 0) {
-    throw savedError('invalid_request', 'That list id is not valid.');
-  }
-  return id;
+  return note || null;
 }
 
-function validateCreateList(input) {
-  const fields = {};
-  const body = input && typeof input === 'object' ? input : {};
-  const name = validateListName(body.name, fields);
-  const description = optionalText(body.description, 200);
-  if (Object.keys(fields).length) {
-    throw savedError('invalid_list', 'Some details need fixing.', { fields });
+function validateMessage(raw) {
+  const message = cleanMultiline(raw);
+  if (message.length > LIMITS.messageMax) {
+    throw new SavedError('invalid_place', 'The message is too long.', {
+      fields: { message: `Messages are limited to ${LIMITS.messageMax} characters.` },
+    });
   }
-  return { name, description };
+  return message || null;
 }
 
-function validateUpdateList(input) {
-  const fields = {};
-  const body = input && typeof input === 'object' ? input : {};
-  if (!Object.prototype.hasOwnProperty.call(body, 'name')) {
-    throw savedError('invalid_list', 'A name is required.', { fields: { name: 'Give the list a name.' } });
+function validateCommentBody(raw) {
+  const body = cleanMultiline(raw);
+  if (!body) {
+    throw new SavedError('invalid_comment', 'Write a comment first.');
   }
-  const name = validateListName(body.name, fields);
-  if (Object.keys(fields).length) {
-    throw savedError('invalid_list', 'Some details need fixing.', { fields });
+  if (body.length > LIMITS.commentMax) {
+    throw new SavedError('comment_too_long', 'Comments are limited to 1000 characters.');
   }
-  return { name };
+  return body;
 }
 
-function validateSave(input) {
-  const fields = {};
-  const body = input && typeof input === 'object' ? input : {};
-  const place = validatePlace(body.place, fields);
-  const listSlug = body.list == null || body.list === '' ? null : cleanText(body.list);
-  if (listSlug && listSlug.length > LIMITS.listNameMax) {
-    fields.list = 'That list is not valid.';
-  }
-  if (Object.keys(fields).length) {
-    throw savedError('invalid_save', 'Some details need fixing.', { fields });
-  }
-  return { place, listSlug };
+// Feed-style paging for the public directory (the mine view is bounded by
+// one person's lists, but it pages the same way).
+function parsePageQuery(q = {}) {
+  let limit = Number.parseInt(q.limit, 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = LIMITS.pageDefault;
+  limit = Math.min(limit, LIMITS.pageMax);
+  let offset = Number.parseInt(q.offset, 10);
+  if (!Number.isFinite(offset) || offset < 0) offset = 0;
+  return { limit, offset };
+}
+
+// Unguessable link token for the Shared level: 32 hex characters, like the
+// platform's own /app-files/ ids.
+function generateShareToken() {
+  return crypto.randomBytes(16).toString('hex');
 }
 
 module.exports = {
   SavedError,
-  savedError,
-  DEFAULT_LISTS,
-  DEFAULT_LIST_SLUGS,
+  VISIBILITIES,
   LIMITS,
-  isDefaultSlug,
-  validateListName,
+  EMOJIS,
+  DEFAULT_LISTS,
+  isOwner,
+  canWrite,
+  canView,
+  validateListInput,
   validatePlace,
-  validatePlaceId,
-  validateListId,
-  validateCreateList,
-  validateUpdateList,
-  validateSave,
+  placeKeyOf,
+  validateNote,
+  validateMessage,
+  validateCommentBody,
+  parsePageQuery,
+  generateShareToken,
 };

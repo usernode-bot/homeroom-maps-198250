@@ -21,6 +21,11 @@ import { fetchPlace } from '../services/places.js';
 import { placeFromSearchResult } from '../services/places-model.js';
 import { createPlaceDetailSession } from '../services/place-detail.js';
 import { createPlaceDetailView } from './place-detail.js';
+import { toast } from '../components/community/parts.js';
+import { openListPicker } from '../components/saved/list-picker.js';
+import { openListForm } from '../components/saved/list-form.js';
+import * as saved from '../services/saved.js';
+import { hasToken } from '../auth.js';
 import { t } from '../i18n/index.js';
 
 function isAbort(err) {
@@ -178,10 +183,41 @@ export async function render(ctx) {
       place,
       fetchDetails: (id) => fetchPlace(id),
     });
-    const view = createPlaceDetailView({ session, onBack: showList });
+    const view = createPlaceDetailView({
+      session,
+      onBack: showList,
+      // Save appears only for a signed-in person on a place that actually has
+      // coordinates: the saved snapshot the server stores requires them.
+      onSave: hasToken() && saved.hasCoords(place) ? (p) => saveToSheet(p || place) : null,
+    });
     session.subscribe(() => view.update(session.getState()));
     ctx.content.replaceChildren(view.root);
     session.start();
+  }
+
+  // Save -> pick a list -> add the place. The picker fetches real lists and
+  // offers creating one; the errors surface as toasts, exactly like the
+  // suggestion flow on the Saved screen.
+  function saveToSheet(place) {
+    openListPicker({
+      onPick: (list) => addTo(list),
+      onCreateNew: () => openListForm({
+        onSaved: (created) => addTo(created),
+      }),
+    });
+    async function addTo(list) {
+      try {
+        await saved.addPlace(list.id, saved.placeToSnapshot(place));
+        toast(t('saved.itemAdded'));
+      } catch (err) {
+        toast(savedErrorMessage(err), { error: true });
+      }
+    }
+  }
+
+  function savedErrorMessage(err) {
+    if (err && err.code === 'already_in_list') return t('saved.alreadyInList');
+    return (err && err.message) || t('error.somethingWentWrong');
   }
 
   function showList() {
