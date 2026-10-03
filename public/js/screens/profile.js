@@ -92,6 +92,7 @@ export async function render(ctx) {
     languageCard(),
     unitsCard(),
     tripsCard(),
+    offlineAreasCard(),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
@@ -117,6 +118,26 @@ function tripsCard() {
     ]),
   ]);
   return c;
+}
+
+// Offline Areas — the Phase 12A entry. Same shape as the Trips card: a
+// title, one line of context, and the way in. #/offline-areas is
+// deep-linkable like every other sub-screen.
+function offlineAreasCard() {
+  return card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.offlineTitle') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.offlineBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('offline.open'), {
+        variant: 'secondary',
+        attrs: { dataset: { openOfflineAreas: 'true' } },
+        onClick: () => router.navigate('offline-areas'),
+      }),
+    ]),
+  ]);
 }
 
 // Both Phase 7 cards are filled from ONE request to /api/profile: the

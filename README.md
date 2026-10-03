@@ -110,11 +110,32 @@ A global map and location platform, built together with its community.
   a deterministic, read-only canned transcript that calls no proxy, no `/act`
   and no write endpoint. No new table and no migration: the transcript lives
   in memory and nothing is persisted.
+- **Offline areas (Phase 12A, downloads disabled)** — the offline contract,
+  storage and screens are shipped in an honest blocked state. The
+  `RegionManifest v1` contract (`offline/region-manifest.js`) is frozen:
+  `validateRegionManifest` never throws and a region carries `version`,
+  `id`, `name`, `provider`, `styleUrl`, `attribution`, bounds, a zoom range
+  and `tiles`/`index`/`graph` artifacts. Regions live in a browser-local
+  IndexedDB store (`public/js/services/offline-tiles.js`); nothing touches
+  localStorage and nothing is stored server-side. The map-resource-only
+  service worker (`public/sw.js`) serves stored tiles, sprites, glyphs and
+  style/TileJSON metadata for allowed hosts only; `/api/*` is excluded on any
+  host, non-GET requests are never touched, and everything else passes
+  through unchanged. `map.capabilities.offline` and `/api/config`'s
+  `offline` block report the effective capability. **Bulk tile downloading is
+  disabled by blocker B2:** the repository holds no documentation of
+  caching/download rights for the configured tile provider, so the download
+  orchestrator refuses before issuing any request, the Offline Areas screen
+  (`#/offline-areas`, reached from Profile) shows "Offline downloads are
+  unavailable" with a Check again action, and no download affordance is
+  rendered. The single unlock is a verifiable `docs/tile-provider-rights.md`
+  (provider, `bulk-download: permitted`, evidence URL) — nothing else, and no
+  code change, enables downloads.
 - **Error boundary and loading states** — a screen that throws shows the
   shared error state with a Try again action; fetches show a skeleton.
 - **Service interfaces** (`public/js/services/*`) with real implementations
-  for search, places, routing, navigation, community, saved places, trips and
-  the assistant, and
+  for search, places, routing, navigation, community, saved places, trips,
+  the assistant and offline areas, and
   documented placeholders for the stages that are still unbuilt, so no screen
   can fake map or community behaviour.
 - **Tests** — `npm test` runs the whole suite (`node --test`): search,
@@ -129,7 +150,8 @@ A global map and location platform, built together with its community.
 Map canvas, "Search this area" / "Nearby" controls (the search service
 already accepts a map area and a location with a radius; only the
 map-anchored UI is missing), points-of-interest browsing from a dedicated
-place-data provider, traffic, public transit, offline maps and location
+place-data provider, traffic, public transit, the offline download itself
+(blocker B2, see above) and location
 sharing, and the community features after proposals and voting
 (contributions, discussions). The Home map frame is live; `/api/config`
 reports the configured `mapProvider` and `placeProvider: null`.

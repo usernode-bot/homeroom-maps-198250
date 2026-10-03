@@ -18,6 +18,10 @@ import * as community from './screens/community.js';
 import * as trips from './screens/trips.js';
 import * as profile from './screens/profile.js';
 import * as saved from './screens/saved.js';
+import * as offlineAreas from './screens/offline-areas.js';
+import { resolveOfflineCapability } from './services/offline-capability.js';
+import { syncRegistration, announceAllowedHosts } from './services/offline-registration.js';
+import { allowedHostsFor } from './services/offline-cache-policy.js';
 
 router.register('home', home);
 router.register('discover', discover);
@@ -28,6 +32,9 @@ router.register('profile', profile);
 // Saved places is a sub-screen of Profile, reached from there; it is a
 // hash route so reload, back and share keep working.
 router.register('saved', saved);
+// Offline Areas (Phase 12A): also a Profile sub-screen with its own hash
+// route.
+router.register('offline-areas', offlineAreas);
 
 const root = document.getElementById('app');
 let currentName = 'home';
@@ -54,6 +61,7 @@ async function loadMeta() {
   try {
     const config = await fetchConfig();
     setState({ config });
+    syncOfflineRegistration(config);
     // Only ask who is signed in when the shell actually gave us a token.
     // Without one the server is right to answer 401, and a request that is
     // expected to fail is noise, not a real error.
@@ -104,6 +112,30 @@ async function renderScreen(name, force = false) {
     if (token !== routeToken) return;
     showError(err);
   }
+}
+
+// Phase 12A: converge the service worker to the resolved offline capability,
+// then announce the map source's known hosts. Registration is idempotent and
+// capability-controlled (services/offline-registration.js): while the
+// provider gate is closed the worker is not registered — and any stale one is
+// unregistered. Best-effort on every path; a failure never breaks boot.
+function syncOfflineRegistration(config) {
+  Promise.resolve()
+    .then(() => {
+      const capability = resolveOfflineCapability({ config });
+      return syncRegistration({ capability }).then((state) => ({ capability, state }));
+    })
+    .then(({ capability }) => {
+      if (!capability || capability.stage !== 'ready') return;
+      const mapConfig = (config && config.map) || {};
+      // Config only knows the style URL's host; after a download the screen
+      // announces the full set the run actually used.
+      const hosts = allowedHostsFor({ styleUrl: mapConfig.styleUrl });
+      if (hosts.length) announceAllowedHosts(hosts);
+    })
+    .catch(() => {
+      /* registration and announcement are best-effort */
+    });
 }
 
 async function boot() {

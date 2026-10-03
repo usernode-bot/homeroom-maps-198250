@@ -30,6 +30,7 @@ const { createSavedRouter } = require('./saved/routes');
 const { createProfiles } = require('./saved/profiles');
 const { createAnthropicProxy } = require('./assistant/provider');
 const { createAssistantRouter } = require('./assistant/routes');
+const { resolveOfflineConfig } = require('./offline');
 
 const app = express();
 const port = PORT;
@@ -193,17 +194,25 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // `placeProvider` is the same signal for per-place data (photos, hours,
 // contact, rating): null until a place provider adapter ships. Nothing here
 // reads dapp.json secrets, and the keyless defaults read no key at all.
+// The `offline` block (Phase 12A) reports the effective offline capability
+// resolved by offline/index.js: while the tile-provider permission gate (B2)
+// is closed — the repository documents no bulk download rights for
+// OpenFreeMap — `offline.downloads.enabled` is false, `blocker` names B2,
+// and no presets are offered. map.capabilities.offline and features.offline
+// mirror that same effective value, so every surface reads one truth.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   const routing = routingApi.resolveRoutingConfig();
+  const offline = resolveOfflineConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
     mapProvider,
-    map,
+    map: { ...map, capabilities: { ...map.capabilities, offline: offline.offline } },
     searchProvider: searchApi.activeProviderName(),
     routing,
     placeProvider: placesApi.activeProviderName(),
+    offline,
     features: {
       map: Boolean(map.configured),
       search: true,
@@ -211,7 +220,7 @@ app.get('/api/config', (_req, res) => {
       communityVoting: true,
       ai: Boolean(LLM_ENABLED),
       traffic: false,
-      offline: false,
+      offline: offline.offline,
     },
   });
 });

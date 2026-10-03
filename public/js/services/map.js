@@ -49,7 +49,15 @@ export function createMapService(mapConfig, { onState, onAttribution, force = nu
     isConfigured: () => isConfigured(config),
     currentConfig: () => config,
     capabilities() {
-      return adapter ? adapter.capabilities : { rotation: false, touchGestures: false, accuracyCircle: false };
+      const base = adapter
+        ? adapter.capabilities
+        : { rotation: false, touchGestures: false, accuracyCircle: false };
+      // Phase 12A: the offline download capability rides alongside the
+      // renderer's capabilities. It comes from the server config's
+      // map.capabilities.offline (the B2 provider gate folded in), and is
+      // false whenever the config does not say otherwise — fail closed.
+      const offline = Boolean(config && config.capabilities && config.capabilities.offline);
+      return { ...base, offline };
     },
 
     async mount(container) {
