@@ -18,6 +18,7 @@ import { errorState } from '../error-state.js';
 import { spinner } from '../loading.js';
 import { t } from '../../i18n/index.js';
 import { formatAddress } from '../../i18n/address.js';
+import { isOffline, offlineScope } from '../../services/search.js';
 
 // Providers whose data carries the ODbL attribution obligation. The line is
 // wired to the result's provider field so a commercial adapter switch (which
@@ -31,6 +32,20 @@ const SCROLL_CLASSES = 'max-h-80 overflow-y-auto';
 
 function keepFocus(e) {
   e.preventDefault();
+}
+
+// The Offline marker every downloaded result carries. One shared shape so the
+// search row and the Place card render the identical badge.
+export function offlineBadge() {
+  return el(
+    'span',
+    {
+      class:
+        'inline-flex shrink-0 items-center rounded-pill border border-line bg-surface-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted',
+      dataset: { offlineBadge: 'true' },
+      text: t('offline.searchBadge'),
+    },
+  );
 }
 
 // One suggestion/recent row: name on top, detail line beneath. Exported so
@@ -53,7 +68,10 @@ export function resultRow({ optionId, iconName, result, active, onSelect }) {
     [
       icon(iconName, { class: 'mt-0.5 h-4 w-4 shrink-0 text-muted' }),
       el('span', { class: 'min-w-0 flex-1' }, [
-        el('span', { class: 'block truncate text-sm font-medium text-ink', text: result.name }),
+        el('span', { class: 'flex items-center gap-1.5' }, [
+          el('span', { class: 'block truncate text-sm font-medium text-ink', text: result.name }),
+          result.offline ? offlineBadge() : null,
+        ]),
         el('span', { class: 'block truncate text-xs text-muted', text: result.detail || '' }),
       ]),
     ],
@@ -129,24 +147,62 @@ function resultsView(state, { onSelect }) {
       }),
     ),
   );
-  return el('div', { class: SCROLL_CLASSES }, [
-    listbox,
-    OSM_PROVIDERS.has(state.results[0] && state.results[0].provider)
-      ? el('p', {
-          class: 'px-4 pb-2.5 pt-1 text-[11px] text-muted',
-          text: t('search.osmLine'),
-        })
-      : null,
-  ]);
+  const first = state.results[0] || null;
+  const offline = Boolean(first && first.offline);
+  // Offline results name the area they came from and carry the manifest's
+  // own attribution. When the device is actually connected (a degraded
+  // fallback after a network failure) say so instead of implying it is the
+  // normal online answer.
+  const notices = [];
+  if (offline) {
+    if (!isOffline()) {
+      notices.push(
+        el('p', {
+          class: 'px-4 pb-1 pt-2 text-[11px] text-muted',
+          dataset: { offlineNotice: 'degraded' },
+          text: t('offline.searchDegraded', { region: first.regionName || '' }),
+        }),
+      );
+    }
+    notices.push(
+      el('p', {
+        class: 'px-4 pb-1 pt-2 text-[11px] text-muted',
+        dataset: { offlineScope: 'true' },
+        text: t('offline.searchScope', { region: first.regionName || '' }),
+      }),
+    );
+    if (first.attribution) {
+      notices.push(
+        el('p', {
+          class: 'px-4 pb-2.5 pt-0.5 text-[11px] text-muted',
+          dataset: { offlineAttribution: 'true' },
+          text: t('offline.searchAttribution', { attribution: first.attribution }),
+        }),
+      );
+    }
+  } else if (OSM_PROVIDERS.has(first && first.provider)) {
+    notices.push(
+      el('p', {
+        class: 'px-4 pb-2.5 pt-1 text-[11px] text-muted',
+        text: t('search.osmLine'),
+      }),
+    );
+  }
+  return el('div', { class: SCROLL_CLASSES }, [listbox, ...notices]);
 }
 
 function noResultsView(state) {
   // role="status" so assistive tech announces the state, like the loading
-  // spinner and the error alert already do.
-  return el('div', { role: 'status' }, [
+  // spinner and the error alert already do. An offline empty answer names the
+  // area it searched, so the copy never reads like a worldwide miss.
+  const scope = offlineScope();
+  const offline = Boolean(scope && scope.regionName);
+  return el('div', { role: 'status', dataset: offline ? { offlineNoResults: 'true' } : {} }, [
     emptyState({
       title: t('search.noResultsTitle'),
-      description: t('search.noResults', { query: state.query.trim() }),
+      description: offline
+        ? t('offline.searchNoResults', { query: state.query.trim(), region: scope.regionName })
+        : t('search.noResults', { query: state.query.trim() }),
     }),
   ]);
 }
@@ -155,6 +211,40 @@ function errorView(state, { onRetry }) {
   // A 429 from the app's own rate limiter is a busy moment, not an outage;
   // say so instead of the generic failure title.
   const rateLimited = state.error && state.error.code === 'rate_limited';
+  // Offline, the honest unavailable states have their own copy, chosen by the
+  // typed reason the offline service carries. This reuses the existing error
+  // branch; online errors are untouched.
+  const offlineReason =
+    state.error && state.error.code === 'offline_unavailable' ? state.error.reason : null;
+  if (offlineReason) {
+    const copy = {
+      no_regions: { title: t('offline.searchNoAreasTitle'), body: t('offline.searchNoAreasBody') },
+      unsupported_browser: {
+        title: t('offline.searchUnsupportedTitle'),
+        body: t('offline.searchUnsupportedBody'),
+      },
+      disabled: {
+        title: t('offline.searchDisabledTitle'),
+        body: t('offline.searchDisabledBody'),
+      },
+    }[offlineReason] || null;
+    if (copy) {
+      return el('div', { dataset: { offlineUnavailable: offlineReason } }, [
+        emptyState({
+          title: copy.title,
+          description: copy.body,
+          action: offlineReason === 'no_regions'
+            ? el('a', {
+                href: '#/offline-areas',
+                class:
+                  'inline-flex items-center justify-center gap-2 rounded-pill border border-line bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+                text: t('offline.open'),
+              })
+            : null,
+        }),
+      ]);
+    }
+  }
   return el('div', {}, [
     errorState({
       title: rateLimited ? t('search.errorBusy') : t('search.errorUnavailable'),

@@ -11,6 +11,8 @@
 // distance or a status the data does not carry.
 import { el } from '../dom.js';
 import { icon } from '../icons.js';
+import { isOffline } from '../../services/search.js';
+import { t } from '../../i18n/index.js';
 import {
   categoryLabel,
   businessStatusLabel,
@@ -117,10 +119,24 @@ export function createPlaceCard(place, { onSelect } = {}) {
     );
   }
 
+  // A place that came from a downloaded region is marked Offline, so the
+  // Discover list never presents device-local data as a live result.
+  const offline = Boolean(place.offline) || isOffline();
+
   const body = [
     thumbnail(place.photos && place.photos[0]),
     el('span', { class: 'min-w-0 flex-1' }, [
-      el('span', { class: 'block truncate text-base font-semibold text-ink', text: place.name }),
+      el('span', { class: 'flex items-center gap-1.5' }, [
+        el('span', { class: 'block truncate text-base font-semibold text-ink', text: place.name }),
+        offline
+          ? el('span', {
+              class:
+                'inline-flex shrink-0 items-center rounded-pill border border-line bg-surface-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted',
+              dataset: { offlineBadge: 'true' },
+              text: t('offline.searchBadge'),
+            })
+          : null,
+      ]),
       ...lines,
       dataSource
         ? el('span', {

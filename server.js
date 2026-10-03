@@ -31,6 +31,7 @@ const { createProfiles } = require('./saved/profiles');
 const { createAnthropicProxy } = require('./assistant/provider');
 const { createAssistantRouter } = require('./assistant/routes');
 const { resolveOfflineConfig } = require('./offline');
+const { resolveOfflineSearchConfig } = require('./offline/search-config');
 
 const app = express();
 const port = PORT;
@@ -204,6 +205,11 @@ app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   const routing = routingApi.resolveRoutingConfig();
   const offline = resolveOfflineConfig();
+  // Phase 12B extends the offline block with the search capability. This is
+  // an operator switch only and does not depend on the B2 download gate:
+  // searching already-stored regions is a device-local read. map.capabilities
+  // .offline and features.offline keep their Phase 12A values untouched.
+  const offlineSearch = resolveOfflineSearchConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
@@ -212,7 +218,7 @@ app.get('/api/config', (_req, res) => {
     searchProvider: searchApi.activeProviderName(),
     routing,
     placeProvider: placesApi.activeProviderName(),
-    offline,
+    offline: { ...offline, search: offlineSearch },
     features: {
       map: Boolean(map.configured),
       search: true,
@@ -418,6 +424,16 @@ app.use(
     spendState: assistantSpend,
   }),
 );
+
+// The staging-only demo fixture behind Phase 12B's offline search seed. It is
+// a tiny MVT test asset, served by its exact path and only on staging; on any
+// other environment the path is not routed at all.
+if (IS_STAGING) {
+  app.get('/tests/fixtures/offline-search-place.mvt', (_req, res) => {
+    res.type('application/vnd.mapbox-vector-tile');
+    res.sendFile(path.join(__dirname, 'tests/fixtures/offline-search-place.mvt'));
+  });
+}
 
 app.use(express.static(PUBLIC_DIR));
 
