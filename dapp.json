@@ -135,6 +135,8 @@
         "public/js/**",
         "public/js/screens/directions.js",
         "public/js/services/routing*.js",
+        "public/js/services/traffic*.js",
+        "public/js/services/community.js",
         "public/js/components/route-summary.js",
         "routing/**",
         "styles/**",
@@ -143,6 +145,11 @@
         "package.json"
       ],
       "allowConsoleErrors": true
+    },
+    {
+      "name": "Directions renders the traffic legend element",
+      "path": "/#/directions",
+      "expectSelector": "[data-traffic-legend]"
     },
     {
       "name": "Directions destination prefills from a place link",

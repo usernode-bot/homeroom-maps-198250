@@ -374,6 +374,13 @@ export default {
   'reports.placeRef': 'Tempat',
   'reports.myReportNote': 'Anda melaporkan ini. Orang lain dapat mengonfirmasi atau tidak setuju.',
 
+  // legenda lalu lintas di Rute (permintaan #26) — kondisi rute dari umpan
+  // laporan komunitas
+  'traffic.legendTitle': 'Kondisi lalu lintas',
+  'traffic.legendJam': 'Laporan macet',
+  'traffic.legendFlowing': 'Tidak ada laporan macet',
+  'traffic.legendSource': 'Dari laporan komunitas',
+
   // assistant (Phase 11) — lembar asisten peta AI
   'assistant.title': 'Tanya tentang peta',
   'assistant.open': 'Tanya tentang peta',
