@@ -410,4 +410,50 @@ export default {
   'assistant.demoComposer': 'The demo preview is read-only',
   'assistant.demoNote': 'This is a demo. Confirming does nothing here.',
 
+  // offline areas (Phase 12A). Word table per the approved spec: one word
+  // for each thing, shared by the screen, the picker rows and the profile
+  // card. No em dashes anywhere in user-facing copy.
+  'offline.title': 'Offline Areas',
+  'offline.intro': 'Download map areas to this device so they keep working without a connection.',
+  'offline.loading': 'Loading offline areas',
+  'offline.open': 'Open offline areas',
+  'offline.chooseRegion': 'Choose a region',
+  'offline.chooseRegionBody': 'Pick a preset region to download. The map in that area keeps working offline.',
+  'offline.download': 'Download',
+  'offline.downloading': 'Downloading',
+  'offline.preparing': 'Preparing download',
+  'offline.progressTiles': '{done} of {total} tiles',
+  'offline.downloadedBytes': '{size} downloaded',
+  'offline.cancel': 'Cancel',
+  'offline.delete': 'Delete',
+  'offline.deleteTitle': 'Delete this offline area?',
+  'offline.deleteBody': 'The downloaded map data for {name} is removed from this device.',
+  'offline.readyOffline': 'Ready offline',
+  'offline.completedOn': 'Completed {date}',
+  'offline.regionDetail': '{tiles} tiles, {size}',
+  'offline.emptyTitle': 'No offline areas yet',
+  'offline.emptyBody': 'Choose a region above to download it to this device.',
+  'offline.areasTitle': 'Your offline areas',
+  'offline.storageUsed': 'Storage used: {used} of {cap}',
+  'offline.tryAgain': 'Try again',
+  'offline.checkAgain': 'Check again',
+  'offline.blockedTitle': 'Offline downloads are unavailable',
+  'offline.blockedBody':
+    'The map tile provider has not granted permission for bulk downloads, so offline areas are turned off. Nothing is downloaded. Check again later.',
+  'offline.unsupportedTitle': 'This browser cannot store offline areas',
+  'offline.unsupportedBody':
+    'Offline areas need service worker and IndexedDB support, which this browser does not provide. The map still works online.',
+  'offline.storedTitle': 'Already on this device',
+  'offline.interruptedTitle': 'Download interrupted',
+  'offline.interruptedBody': 'The download did not finish. Try again to resume from where it stopped.',
+  'offline.failedTitle': 'Download failed',
+  'offline.failedBody': 'The download could not complete. Try again, or delete the area.',
+  'offline.storageLimitTitle': 'Not enough storage',
+  'offline.storageLimitBody':
+    'This device ran out of room before the download finished. Free up space or delete other areas, then try again.',
+  'offline.presetZoom': 'Zoom {min} to {max}',
+  'offline.presetSize': 'About {size}',
+  'profile.offlineTitle': 'Offline Areas',
+  'profile.offlineBody': 'Download map areas for use without a connection.',
+
 };

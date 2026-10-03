@@ -46,6 +46,18 @@
       "key": "PLACE_PROVIDER",
       "description": "Which place-data provider adapter to use for per-place depth: photos, opening hours, phone, website, rating, business status. No adapter is implemented yet (Phase 3 ships the model, service and UI with honest Not-available states), so leaving this unset keeps /api/places answering 501 instead of serving fabricated POI data. Selection criteria, in order: (1) worldwide coverage of the place types the app surfaces, (2) per-place detail depth, (3) licensing that permits storing and displaying results, (4) cost at this app's scale, (5) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
       "required": false
+    },
+    {
+      "key": "OFFLINE_ENABLED",
+      "description": "Operator switch for offline map areas (Phase 12A). Can only narrow the tile-provider permission gate (B2), never widen it: while the repository documents no bulk download rights for the configured provider, downloads stay off regardless of this value.",
+      "required": false,
+      "default": "true"
+    },
+    {
+      "key": "OFFLINE_MAX_STORAGE_MB",
+      "description": "Per-device storage budget for offline map areas, in megabytes. The Offline Areas screen reports actual usage against this budget.",
+      "required": false,
+      "default": "2048"
     }
   ],
   "visibility": {
@@ -366,6 +378,38 @@
       "name": "Assistant open control in Indonesian",
       "path": "/#/?lang=id",
       "expectText": "Tanya tentang peta"
+    },
+    {
+      "id": "offline.areas",
+      "name": "Offline Areas shows the honest unavailable state while B2 is closed",
+      "path": "/#/offline-areas",
+      "expectSelector": "[data-offline-host][data-offline-state=\"capability_unavailable\"]",
+      "expectText": "Offline downloads are unavailable",
+      "visual": true,
+      "impact": [
+        "offline/**",
+        "public/sw.js",
+        "public/js/services/offline*.js",
+        "public/js/components/offline/**",
+        "public/js/screens/offline-areas.js",
+        "public/js/screens/profile.js",
+        "public/js/app.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Profile links to Offline Areas",
+      "path": "/#/profile",
+      "expectText": "Offline Areas"
+    },
+    {
+      "name": "Offline Areas copy in Indonesian",
+      "path": "/#/offline-areas?lang=id",
+      "expectText": "Pengunduhan offline tidak tersedia"
     },
     {
       "id": "assistant.demo",

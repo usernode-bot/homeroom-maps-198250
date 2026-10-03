@@ -124,6 +124,19 @@ function resolveMapConfig() {
   };
 }
 
+// ── Offline maps (Phase 12A) ──────────────────────────────────────────────
+// The operator kill-switch and the device budget for offline map areas.
+// NEITHER value can enable bulk tile downloading: the effective capability
+// still requires the tile-provider permission gate (offline/provider-policy.js,
+// blocker B2), which is closed for every provider the repository has not
+// documented. These two knobs only ever narrow what the permission gate
+// already allows, so flipping them cannot bypass B2.
+const OFFLINE_ENABLED = !/^(false|0|no|off)$/i.test(String(process.env.OFFLINE_ENABLED || 'true').trim());
+const OFFLINE_MAX_STORAGE_MB = Math.max(
+  0,
+  Number.parseInt(process.env.OFFLINE_MAX_STORAGE_MB || '2048', 10) || 0,
+) || 2048;
+
 // Search provider configuration. `SEARCH_PROVIDER` names the adapter the
 // search service uses (see search/providers/); it defaults to Photon, which
 // needs no key and no billing, so the app works out of the box and staging
@@ -222,6 +235,8 @@ module.exports = {
   PUBLIC_DIR,
   MAP_PROVIDER,
   resolveMapConfig,
+  OFFLINE_ENABLED,
+  OFFLINE_MAX_STORAGE_MB,
   SEARCH_PROVIDER,
   PHOTON_URL,
   PELIAS_URL,
