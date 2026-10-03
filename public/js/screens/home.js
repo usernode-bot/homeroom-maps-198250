@@ -206,7 +206,7 @@ export async function render(ctx) {
         styleUrl: null,
         styleUrlDark: null,
         attribution: DEFAULT_ATTRIBUTION,
-        capabilities: { rotation: false, touchGestures: false, accuracyCircle: false },
+        capabilities: { rotation: false, touchGestures: false, accuracyCircle: false, offline: false },
       };
 
   // The app's own attribution strip is rendered up front from config, so it is
