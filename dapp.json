@@ -3,7 +3,7 @@
   "description": "A global map and location platform built together with its community.",
   "icon": {
     "image": "brand/icon.png",
-    "emoji": "\ud83d\uddfa\ufe0f"
+    "emoji": "🗺️"
   },
   "secrets": [
     {
@@ -446,9 +446,7 @@
   ],
   "governance": {
     "approvers": "anyone",
-    "approvals": {
-      "atLeast": 1
-    }
+    "approvals": "default"
   },
   "llm": {
     "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",
