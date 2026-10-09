@@ -3,10 +3,9 @@
 // preference controls still render, and the identity area shows the shared
 // error state with a Try again action.
 //
-// Phase 7 added two cards, both additive and both built from the existing
-// pieces: Activity (the person's own contribution, proposal and vote counts,
-// read from /api/profile) and Saved places (the real saved-place count and a
-// link into the Saved screen). No existing card was rewritten; the Language
+// Phase 7 added an Activity card (the person's own contribution, proposal and
+// vote counts, read from /api/profile) and a Saved places card linking into
+// the Saved screen. No existing card was rewritten; the Language
 // and Units cards remain Phase 9's.
 import { el } from '../components/dom.js';
 import { card } from '../components/card.js';
@@ -85,12 +84,13 @@ export async function render(ctx) {
             text: signedOut ? t('profile.signedOutNote') : t('profile.signedInNote'),
           }),
         ]),
-    // Phase 7: real activity and saved places, loaded from the server in one
-    // request. Both are skipped entirely when there is nobody signed in.
+    // Phase 7: real activity, loaded from the server. Skipped entirely when
+    // there is nobody signed in.
     ...(signedOut || loadError ? [] : profileCards()),
     themeCard(),
     languageCard(),
     unitsCard(),
+    savedCard(),
     tripsCard(),
     offlineAreasCard(),
     emptyState({
@@ -98,6 +98,24 @@ export async function render(ctx) {
       description: t('profile.moreSoonBody'),
     }),
   );
+}
+
+// Saved places — a real screen now (#/saved), so this card links to it
+// instead of sitting in a placeholder panel.
+function savedCard() {
+  return card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.savedTitle') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.savedBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('profile.savedOpen'), {
+        variant: 'secondary',
+        onClick: () => { window.location.hash = '#/saved'; },
+      }),
+    ]),
+  ]);
 }
 
 // Trips — the Phase 10 trip planner entry. There is deliberately no sixth
@@ -140,12 +158,11 @@ function offlineAreasCard() {
   ]);
 }
 
-// Both Phase 7 cards are filled from ONE request to /api/profile: the
-// activity counts and the saved-place count come from the same read model, so
-// the screen asks once. Each card still owns its own loading and error state.
+// The Activity card is filled from /api/profile and owns its own loading and
+// error state.
 function profileCards() {
   const request = apiGet('/api/profile');
-  return [activityCard(request), savedCard(request)];
+  return [activityCard(request)];
 }
 
 // The person's own activity: the real counts from /api/profile (their own
@@ -192,41 +209,6 @@ function loadingRow() {
     spinner(),
     el('p', { class: 'text-sm text-muted', text: t('common.loading') }),
   ]);
-}
-
-// Saved places: the real count plus the way in. The count is a number the
-// server counted; the button opens the Saved screen.
-function savedCard(request) {
-  const body = el('div', { class: 'mt-3 flex flex-col gap-2', dataset: { profileSaved: 'true' } }, [
-    loadingRow(),
-  ]);
-  const cardEl = card([
-    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.savedTitle') }),
-  ]);
-  cardEl.appendChild(body);
-
-  request
-    .then((data) => {
-      const count = data && data.savedPlaces ? data.savedPlaces.count : 0;
-      body.replaceChildren(
-        el('p', {
-          class: 'text-sm text-muted',
-          text: count === 1 ? t('profile.savedCountOne') : t('profile.savedCount', { count }),
-        }),
-        button(t('profile.openSaved'), {
-          variant: 'secondary',
-          class: 'self-start',
-          attrs: { 'data-open-saved': 'true' },
-          onClick: () => router.navigate('saved'),
-        }),
-      );
-    })
-    .catch((err) => {
-      body.replaceChildren(
-        el('p', { class: 'text-sm text-muted', text: (err && err.message) || t('profile.activityError') }),
-      );
-    });
-  return cardEl;
 }
 
 function themeCard() {

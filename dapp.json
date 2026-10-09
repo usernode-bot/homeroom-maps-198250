@@ -332,6 +332,50 @@
       "expectText": "Appearance"
     },
     {
+      "name": "Profile links to saved places",
+      "path": "/#/profile",
+      "expectText": "Open your lists"
+    },
+    {
+      "name": "Saved opens with your lists",
+      "path": "/#/saved",
+      "expectText": "Your lists"
+    },
+    {
+      "id": "saved.screen",
+      "name": "Saved screen renders with tabs",
+      "path": "/#/saved",
+      "expectSelector": "[data-saved-tabs]",
+      "visual": true,
+      "impact": [
+        "public/js/screens/saved.js",
+        "public/js/screens/profile.js",
+        "public/js/screens/discover.js",
+        "public/js/screens/place-detail.js",
+        "public/js/components/saved/**",
+        "public/js/services/saved.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "server.js"
+      ]
+    },
+    {
+      "name": "Saved public lists show the staging demo",
+      "path": "/#/saved?view=public",
+      "expectText": "Staging demo: Bakeries of Berlin"
+    },
+    {
+      "name": "Saved list detail opens with items",
+      "path": "/#/saved?list=900001",
+      "expectSelector": "[data-saved-list-detail]",
+      "expectText": "Staging demo: Corner Bakery"
+    },
+    {
+      "name": "Saved item detail opens with comments",
+      "path": "/#/saved?list=900001&item=900101",
+      "expectText": "Comments"
+    },
+    {
       "id": "trips.demo",
       "name": "Trip detail renders the demo itinerary",
       "path": "/#/trips?demo=1",

@@ -20,7 +20,10 @@ const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
 const { createReportsStore } = require('./reports/store');
 const { createReportsRouter } = require('./reports/routes');
-const placesApi = require('./places');
+const places = require('./places');
+// The routes below need the bound service (createPlaceService), not the
+// module itself — the module only exports the factory and the pure helpers.
+const placesApi = places.createPlaceService();
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
 const { createStore: createTripStore } = require('./trips/store');
@@ -50,11 +53,12 @@ const communityStore = createStore({
 // itinerary items. All three tables are staging:private, so staging starts
 // empty and the store seeds one fake demo trip there.
 const tripStore = createTripStore({ pool });
-// Saved places (Phase 7): per-user lists and saved places in Postgres.
-// Ownership is enforced in every query and by a composite owner foreign key;
-// see saved/store.js. `profiles` reads the person's own proposals and votes
-// out of the community tables — read-only, no Phase 5 logic touched.
+
+// Saved places: lists, their places, suggestions and comments. Every table
+// is staging:private and every visibility check lives in saved/model.js.
 const savedStore = createSavedStore({ pool });
+// `profiles` reads the person's own proposals and votes out of the community
+// tables — read-only, no Phase 5 logic touched.
 const profiles = createProfiles({ pool });
 
 // Community reports (Phase 6): the same policies registry is shared with the
@@ -218,6 +222,7 @@ app.get('/api/config', (_req, res) => {
       search: true,
       directions: Boolean(routing.configured),
       communityVoting: true,
+      savedPlaces: true,
       ai: Boolean(LLM_ENABLED),
       traffic: false,
       offline: offline.offline,
@@ -238,15 +243,10 @@ app.get('/api/me', (req, res) => {
 
 // Profile (Phase 7) — the signed-in person's own contributions, proposals
 // and votes. Read-only, and scoped to the caller's own id, so it can only
-// ever describe the person asking. Saved places live under /api/saved.
+// ever describe the person asking. Saved lists live under /api/saved.
 app.get('/api/profile', async (req, res, next) => {
   try {
-    const userId = String(req.user.id);
-    const [overview, savedPlaceIds] = await Promise.all([
-      profiles.overview(userId),
-      savedStore.savedPlaceIds(userId),
-    ]);
-    res.json({ ...overview, savedPlaces: { count: savedPlaceIds.length } });
+    res.json(await profiles.overview(String(req.user.id)));
   } catch (err) {
     next(err);
   }
@@ -338,6 +338,11 @@ app.use(
   createCommunityRouter({ store: communityStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
 );
 
+// Saved places — the read and write routes of the saved service (saved/).
+// Mounted like community: all routes sit behind the auth gate, so req.user
+// is always present, and visibility is enforced inside the store, not here.
+app.use('/api/saved', createSavedRouter({ store: savedStore }));
+
 app.use('/api/trips', createTripsRouter({ store: tripStore, isStaging: IS_STAGING }));
 app.use(
   '/api/reports',
@@ -396,12 +401,10 @@ app.get('/api/places', (req, res) =>
 app.get('/api/places/:id', (req, res) =>
   handlePlaces(req, res, ({ lang }) => placesApi.getPlaceDetails(req.params.id, { lang })));
 
-// Saved places (Phase 7) — the real router replacing the 501 stub this path
-// used to answer. GET /api/saved and GET /api/profile are public reads only
-// in the sense that they need no reviewer role; the auth gate above still
-// requires a verified platform token for every one of them, and each query is
-// scoped to that token's user.
-app.use('/api/saved', createSavedRouter({ store: savedStore }));
+// Deferred API surface: every stage's endpoint (/api/search, /api/directions,
+// /api/community, /api/places, /api/saved) is now real, so the honest-501
+// stub list this block used to keep is empty. A request to an unknown /api/*
+// path falls through to the JSON 404 below, never to the HTML shell.
 
 // AI assistant (Phase 11) — /api/assistant/turn, /act and /status. All three
 // sit behind the auth gate above (none is added to PUBLIC_API_PATHS). `act`
@@ -481,8 +484,8 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
-  // Idempotent boot migration: the community tables (all staging:private),
-  // the Phase 7 saved-places tables, and the report tables (reports and
+  // Idempotent boot migration: the community and saved-places tables (all
+  // staging:private), and the report tables (reports and
   // report_status_events public, the reaction and flag tables
   // staging:private). Place and map tables arrive with their features in
   // later stages. The starter template's `presses` table is intentionally
@@ -490,7 +493,10 @@ async function start() {
   // drops it).
   await communityStore.migrate();
   await savedStore.migrate();
-  if (IS_STAGING) await communityStore.seedStaging();
+  if (IS_STAGING) {
+    await communityStore.seedStaging();
+    await savedStore.seedStaging();
+  }
   await tripStore.migrate();
   if (IS_STAGING) await tripStore.seedStaging();
   await reportsStore.migrate();

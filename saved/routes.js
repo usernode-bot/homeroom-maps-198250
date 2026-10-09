@@ -1,38 +1,47 @@
-// Saved places HTTP routes, mounted at /api/saved. Every route sits behind the
-// app's auth gate (all /api/* requests need a verified platform token), so
-// req.user is always present here and the caller's id is the only user_id any
-// query ever sees.
+// Saved places HTTP routes, mounted at /api/saved. Every route sits behind
+// the app's auth gate (all /api/* requests need a verified platform token),
+// so req.user is always present here.
 //
-//   GET    /                      lists + the caller's saved place ids
-//   GET    /lists                 the caller's lists, with real item counts
-//   POST   /lists                 create a custom list
-//   GET    /lists/:id             one list and its contents
-//   PATCH  /lists/:id             rename a custom list
-//   DELETE /lists/:id             delete a CUSTOM list (never its places)
-//   POST   /lists/:ref/items      add a saved place to a list
-//   DELETE /lists/:ref/items      remove a place from a list
-//   GET    /places                the caller's saved places
-//   POST   /places                save a place (optionally into a list)
-//   DELETE /places/:placeId       unsave a place
-//   GET    /places/:placeId/status  whether the caller has saved this place
-//
-// `:ref` is either a default list slug (favorites, want_to_visit, travel,
-// restaurants) or a numeric list id.
+//   GET    /lists?view=mine|public            your lists (lazily ensured) | the public directory
+//   POST   /lists                             create { name, emoji, visibility }
+//   GET    /lists/:id?key=                    one list with its items (+ pending suggestions for the owner)
+//   PATCH  /lists/:id                         owner: edit name / emoji / visibility
+//   DELETE /lists/:id                         owner: delete the list and everything in it
+//   POST   /lists/:id/items                   owner: add a place snapshot { place, note? }
+//   PATCH  /lists/:id/items/:itemId           owner: edit the note { note }
+//   DELETE /lists/:id/items/:itemId           owner: remove the place
+//   POST   /lists/:id/suggestions             non-owner who can view: suggest { place, message? }
+//   POST   /suggestions/:id/accept            owner: accept (inserts the item)
+//   POST   /suggestions/:id/reject            owner: reject
+//   GET    /items/:id/comments?key=           anyone who can view the list
+//   POST   /items/:id/comments                anyone who can view the list { body }
+//   DELETE /comments/:id                      the author, or the list owner
 'use strict';
 
 const express = require('express');
 const model = require('./model');
 
+// The Shared level's key rides on the query string for reads (?key=) and the
+// deep link (&key=); writes never honour it — the owner's own token does the
+// authenticating.
+function keyOf(req) {
+  const key = req.query.key;
+  return typeof key === 'string' && key ? key : null;
+}
+
 function createSavedRouter({ store }) {
   const router = express.Router();
 
   function viewerOf(req) {
-    return { id: String(req.user.id), username: String(req.user.username || '') };
+    return {
+      id: String(req.user.id),
+      username: String(req.user.username || ''),
+    };
   }
 
-  // Express 4 does not forward rejected promises, so every async handler goes
-  // through this: typed SavedErrors become their own status and code, anything
-  // else reaches the app's central error handler.
+  // Express 4 does not forward rejected promises, so every async handler
+  // goes through this: typed SavedErrors become their own status and code,
+  // anything else reaches the app's central error handler.
   const handle = (fn) => async (req, res, next) => {
     try {
       res.json(await fn(viewerOf(req), req));
@@ -47,51 +56,47 @@ function createSavedRouter({ store }) {
   };
 
   router.get(
-    '/',
-    handle(async (viewer) => {
-      const lists = await store.listLists(viewer.id);
-      const savedPlaceIds = await store.savedPlaceIds(viewer.id);
-      return { lists, savedPlaceIds };
-    }),
-  );
-
-  router.get(
     '/lists',
-    handle(async (viewer) => ({ lists: await store.listLists(viewer.id) })),
+    handle(async (viewer, req) =>
+      req.query.view === 'public' ? store.listPublic(viewer, req.query) : store.listMine(viewer, req.query)),
   );
-  router.post('/lists', handle((viewer, req) => store.createList(viewer.id, req.body)));
-  router.get('/lists/:id', handle((viewer, req) => store.getList(viewer.id, req.params.id)));
-  router.patch('/lists/:id', handle((viewer, req) => store.renameList(viewer.id, req.params.id, req.body)));
-  router.delete('/lists/:id', handle((viewer, req) => store.deleteList(viewer.id, req.params.id)));
-
+  router.post('/lists', handle(async (viewer, req) => store.create(viewer, req.body)));
+  router.get(
+    '/lists/:id',
+    handle(async (viewer, req) => store.getDetail(viewer, req.params.id, { key: keyOf(req) })),
+  );
+  router.patch('/lists/:id', handle(async (viewer, req) => store.update(viewer, req.params.id, req.body)));
+  router.delete('/lists/:id', handle(async (viewer, req) => store.remove(viewer, req.params.id)));
+  router.post('/lists/:id/items', handle(async (viewer, req) => store.addItem(viewer, req.params.id, req.body)));
+  router.patch(
+    '/lists/:id/items/:itemId',
+    handle(async (viewer, req) => store.updateItem(viewer, req.params.id, req.params.itemId, req.body)),
+  );
+  router.delete(
+    '/lists/:id/items/:itemId',
+    handle(async (viewer, req) => store.removeItem(viewer, req.params.id, req.params.itemId)),
+  );
   router.post(
-    '/lists/:ref/items',
-    handle((viewer, req) => store.addToList(viewer.id, req.params.ref, req.body)),
+    '/lists/:id/suggestions',
+    handle(async (viewer, req) => store.suggest(viewer, req.params.id, req.body)),
   );
-  router.delete(
-    '/lists/:ref/items',
-    handle((viewer, req) => {
-      const placeId = (req.body && req.body.placeId) || req.query.placeId;
-      return store.removeFromList(viewer.id, req.params.ref, placeId);
-    }),
+  router.post(
+    '/suggestions/:id/accept',
+    handle(async (viewer, req) => store.decideSuggestion(viewer, req.params.id, 'accept')),
   );
-
+  router.post(
+    '/suggestions/:id/reject',
+    handle(async (viewer, req) => store.decideSuggestion(viewer, req.params.id, 'reject')),
+  );
   router.get(
-    '/places',
-    handle(async (viewer) => ({ places: await store.listPlaces(viewer.id) })),
+    '/items/:id/comments',
+    handle(async (viewer, req) => store.listComments(viewer, req.params.id, { key: keyOf(req) })),
   );
-  router.post('/places', handle((viewer, req) => store.save(viewer.id, req.body)));
-  router.get(
-    '/places/:placeId/status',
-    handle(async (viewer, req) => ({
-      placeId: model.validatePlaceId(req.params.placeId),
-      saved: await store.isSaved(viewer.id, req.params.placeId),
-    })),
+  router.post(
+    '/items/:id/comments',
+    handle(async (viewer, req) => store.addComment(viewer, req.params.id, req.body, { key: keyOf(req) })),
   );
-  router.delete(
-    '/places/:placeId',
-    handle((viewer, req) => store.unsave(viewer.id, req.params.placeId)),
-  );
+  router.delete('/comments/:id', handle(async (viewer, req) => store.deleteComment(viewer, req.params.id)));
 
   return router;
 }
