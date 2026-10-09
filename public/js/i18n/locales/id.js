@@ -458,6 +458,29 @@ export default {
     'Perangkat kehabisan ruang sebelum unduhan selesai. Kosongkan ruang atau hapus area lain, lalu coba lagi.',
   'offline.presetZoom': 'Zoom {min} sampai {max}',
   'offline.presetSize': 'Sekitar {size}',
+  // offline search (Phase 12B). Tulisan tangan, tanpa em dash.
+  'offline.searchBadge': 'Offline',
+  'offline.searchScope': 'Pencarian offline hanya mencakup {region}, area terunduh di perangkat ini.',
+  'offline.searchNoResultsTitle': 'Tidak ada hasil',
+  'offline.searchNoResults': 'Tidak ada hasil offline untuk "{query}" di {region}.',
+  'offline.searchNoAreasTitle': 'Tidak ada area offline di perangkat ini',
+  'offline.searchNoAreasBody':
+    'Unduh area peta di Area Offline untuk mencarinya tanpa koneksi.',
+  'offline.searchUnsupportedTitle': 'Browser ini tidak bisa mencari area offline',
+  'offline.searchUnsupportedBody':
+    'Pencarian offline memerlukan IndexedDB, yang tidak tersedia di browser ini. Pencarian online tetap berfungsi.',
+  'offline.searchDisabledTitle': 'Pencarian offline dimatikan',
+  'offline.searchDisabledBody':
+    'Pencarian offline dimatikan untuk aplikasi ini. Pencarian online tetap berfungsi.',
+  'offline.searchAttribution': 'Data offline: {attribution}',
+  'offline.searchDegraded': 'Anda sedang offline. Menampilkan hasil terunduh untuk {region}.',
+  'offline.searchKindCountry': 'Negara',
+  'offline.searchKindRegion': 'Wilayah',
+  'offline.searchKindCity': 'Kota',
+  'offline.searchKindTown': 'Kota kecil',
+  'offline.searchKindVillage': 'Desa',
+  'offline.searchKindSuburb': 'Lingkungan',
+  'offline.searchKindPlace': 'Tempat',
   'profile.offlineTitle': 'Area Offline',
   'profile.offlineBody': 'Unduh area peta untuk digunakan tanpa koneksi.',
 
