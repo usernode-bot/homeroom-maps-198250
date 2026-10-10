@@ -2,7 +2,7 @@
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
   "icon": {
-    "image": "brand/icon.png",
+    "image": "brand/icon.jpg",
     "emoji": "🗺️"
   },
   "secrets": [
@@ -87,6 +87,12 @@
         "Dockerfile",
         "package.json"
       ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Top bar shows the Homeroom Maps logo",
+      "path": "/#/",
+      "expectSelector": "header img[data-app-logo='mark'][src='/icons/logo-mark-96.png']",
       "allowConsoleErrors": true
     },
     {

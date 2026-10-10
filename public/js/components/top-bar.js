@@ -18,7 +18,19 @@ export function topBar({ title = 'Homeroom Maps', subtitle = '' } = {}) {
             'mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4',
         },
         [
-          el('span', { class: 'text-base font-semibold tracking-tight text-ink', text: title }),
+          el('span', { class: 'flex min-w-0 items-center gap-2' }, [
+            // The logo's emblem; the title beside it names the app, so the
+            // image itself is decorative.
+            el('img', {
+              class: 'h-8 w-8 shrink-0 rounded-lg',
+              src: '/icons/logo-mark-96.png',
+              alt: '',
+              width: '32',
+              height: '32',
+              dataset: { appLogo: 'mark' },
+            }),
+            el('span', { class: 'text-base font-semibold tracking-tight text-ink', text: title }),
+          ]),
           el('span', {
             class: 'truncate text-sm text-muted',
             text: subtitle || '',
