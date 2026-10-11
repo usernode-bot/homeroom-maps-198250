@@ -21,6 +21,8 @@ const { parseReviewers } = require('./community/model');
 const { createReportsStore } = require('./reports/store');
 const { createReportsRouter } = require('./reports/routes');
 const placesApi = require('./places');
+const weatherApi = require('./weather');
+const { resolveWeatherConfig } = require('./weather/server-config');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
 const { createStore: createTripStore } = require('./trips/store');
@@ -201,6 +203,12 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // OpenFreeMap — `offline.downloads.enabled` is false, `blocker` names B2,
 // and no presets are offered. map.capabilities.offline and features.offline
 // mirror that same effective value, so every surface reads one truth.
+// The `weather` block (Phase 12G) is the same signal for current conditions
+// at the map centre. With no weather adapter implemented and none
+// authorized under the W1 gate, it always reads
+//   { configured: false, provider: null, blocker: 'W1', reason: ... }
+// and the client renders the honest "Weather unavailable" state. The
+// features.weather flag mirrors it, so every surface reads one truth.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   const routing = routingApi.resolveRoutingConfig();
@@ -210,6 +218,7 @@ app.get('/api/config', (_req, res) => {
   // searching already-stored regions is a device-local read. map.capabilities
   // .offline and features.offline keep their Phase 12A values untouched.
   const offlineSearch = resolveOfflineSearchConfig();
+  const weather = resolveWeatherConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
@@ -219,6 +228,7 @@ app.get('/api/config', (_req, res) => {
     routing,
     placeProvider: placesApi.activeProviderName(),
     offline: { ...offline, search: offlineSearch },
+    weather,
     features: {
       map: Boolean(map.configured),
       search: true,
@@ -227,6 +237,7 @@ app.get('/api/config', (_req, res) => {
       ai: Boolean(LLM_ENABLED),
       traffic: false,
       offline: offline.offline,
+      weather: Boolean(weather.configured),
     },
   });
 });
@@ -401,6 +412,47 @@ app.get('/api/places', (req, res) =>
     })));
 app.get('/api/places/:id', (req, res) =>
   handlePlaces(req, res, ({ lang }) => placesApi.getPlaceDetails(req.params.id, { lang })));
+
+// Weather — the one read route of the weather service (weather/index.js).
+// GET under /api/, so the auth gate above covers it; a provider key never
+// leaves the server. The typed error codes from weather/provider.js map to
+// HTTP statuses here and use the app's standard JSON error shape, so the
+// client's apiGet() turns them into typed ApiErrors for free. With no
+// weather adapter implemented and none authorized under the W1 gate, every
+// call answers an honest 501 (not_configured) rather than fabricated
+// weather. `timeout` gets its own 504 deliberately: weather is
+// time-sensitive, so "no answer in time" is its own state in the panel.
+const WEATHER_ERROR_STATUS = {
+  invalid_request: 400,
+  not_configured: 501,
+  rate_limited: 429,
+  timeout: 504,
+};
+
+app.get('/api/weather/current', async (req, res) => {
+  try {
+    // Language resolution order, same as search and places: explicit query
+    // param, then the signed-in user's platform locale (JWT claim), then
+    // Accept-Language, then omit and let the provider default.
+    const lang =
+      req.query.lang ||
+      (req.user && req.user.locale) ||
+      firstAcceptLanguage(req.headers['accept-language']) ||
+      null;
+    const out = await weatherApi.run({
+      lat: req.query.lat,
+      lng: req.query.lng,
+      lang,
+    });
+    res.json(out);
+  } catch (err) {
+    const code = err && err.code ? err.code : 'provider_error';
+    console.warn(`[weather] ${code}: ` + (err && err.message));
+    res.status(WEATHER_ERROR_STATUS[code] || 502).json({
+      error: { code, message: (err && err.message) || 'The weather lookup failed.' },
+    });
+  }
+});
 
 // Saved places (Phase 7) — the real router replacing the 501 stub this path
 // used to answer. GET /api/saved and GET /api/profile are public reads only

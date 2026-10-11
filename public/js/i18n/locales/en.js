@@ -489,4 +489,31 @@ export default {
   'offline.searchKindSuburb': 'Neighbourhood',
   'offline.searchKindPlace': 'Place',
 
+  // weather (Phase 12G). The panel's whole vocabulary. With no authorized
+  // weather provider (the W1 gate) every data state is unreachable, and the
+  // panel leads with the honest unavailable state. Hand-written, and no em
+  // dashes anywhere.
+  'weather.control': 'Weather',
+  'weather.controlSr': 'Show weather for this area',
+  'weather.title': 'Weather',
+  'weather.close': 'Close',
+  'weather.scope': 'Current conditions for the map area on screen.',
+  'weather.unavailableTitle': 'Weather unavailable',
+  'weather.unavailableBody':
+    'No weather source is connected yet, so there is nothing to show. This app does not display made-up weather.',
+  'weather.checkAgain': 'Check again',
+  'weather.loading': 'Checking the weather…',
+  'weather.offlineTitle': 'No connection',
+  'weather.offlineBody': 'The weather cannot be reached right now. Reconnect and try again.',
+  'weather.errorTitle': 'Weather could not be loaded',
+  'weather.errorBody': 'The weather service did not answer. Try again in a moment.',
+  'weather.refresh': 'Refresh',
+  'weather.stale': 'This reading is more than an hour old. Refresh for current conditions.',
+  'weather.observed': 'Observed at {time}',
+  'weather.updated': 'Updated at {time}',
+  'weather.temperature': 'Temperature',
+  'weather.precipitation': 'Precipitation',
+  'weather.wind': 'Wind',
+  'weather.source': 'Source: {provider}',
+
 };

@@ -484,4 +484,31 @@ export default {
   'profile.offlineTitle': 'Area Offline',
   'profile.offlineBody': 'Unduh area peta untuk digunakan tanpa koneksi.',
 
+  // weather (Phase 12G). Kosakata panel cuaca. Tanpa penyedia cuaca yang
+  // diotorisasi (gerbang W1), semua status data tidak dapat dijangkau, dan
+  // panel memimpin dengan status "tidak tersedia" yang jujur. Tulisan
+  // tangan, tanpa em dash.
+  'weather.control': 'Cuaca',
+  'weather.controlSr': 'Tampilkan cuaca untuk area ini',
+  'weather.title': 'Cuaca',
+  'weather.close': 'Tutup',
+  'weather.scope': 'Kondisi saat ini untuk area peta yang tampil di layar.',
+  'weather.unavailableTitle': 'Cuaca tidak tersedia',
+  'weather.unavailableBody':
+    'Belum ada sumber cuaca yang terhubung, jadi tidak ada yang bisa ditampilkan. Aplikasi ini tidak menampilkan cuaca buatan.',
+  'weather.checkAgain': 'Periksa lagi',
+  'weather.loading': 'Memeriksa cuaca…',
+  'weather.offlineTitle': 'Tidak ada koneksi',
+  'weather.offlineBody': 'Cuaca tidak bisa dijangkau saat ini. Sambungkan kembali dan coba lagi.',
+  'weather.errorTitle': 'Cuaca gagal dimuat',
+  'weather.errorBody': 'Layanan cuaca tidak menjawab. Coba lagi sebentar lagi.',
+  'weather.refresh': 'Muat ulang',
+  'weather.stale': 'Pembacaan ini berumur lebih dari satu jam. Muat ulang untuk kondisi terkini.',
+  'weather.observed': 'Diamati pukul {time}',
+  'weather.updated': 'Diperbarui pukul {time}',
+  'weather.temperature': 'Suhu',
+  'weather.precipitation': 'Curah hujan',
+  'weather.wind': 'Angin',
+  'weather.source': 'Sumber: {provider}',
+
 };

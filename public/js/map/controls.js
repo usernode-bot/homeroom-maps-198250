@@ -1,6 +1,7 @@
 // The map overlay controls, rendered into Home's existing top-right
-// `data-map-controls` slot. Zoom in, zoom out, reset north and My location are
-// real buttons; Map layers stays the disabled "Coming soon" placeholder.
+// `data-map-controls` slot. Zoom in, zoom out, reset north, My location and
+// Weather are real buttons; Map layers stays the disabled "Coming soon"
+// placeholder.
 //
 // Which controls appear is driven by the adapter's capability flags: a device
 // whose renderer cannot rotate simply has no reset-north button, rather than a
@@ -29,7 +30,15 @@ function iconButton({ icon, label, onClick }) {
 
 // Build the control column. Returns the element; handlers are wired by the
 // caller through the callbacks so this stays a pure view.
-export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, onMyLocation, myLocationOn }) {
+export function mapControls({
+  capabilities,
+  onZoomIn,
+  onZoomOut,
+  onResetNorth,
+  onMyLocation,
+  onWeather,
+  myLocationOn,
+}) {
   const nodes = [
     buttonWithHandler(iconButton({ icon: 'plus', label: t('map.zoomIn') }), onZoomIn),
     buttonWithHandler(iconButton({ icon: 'minus', label: t('map.zoomOut') }), onZoomOut),
@@ -54,6 +63,15 @@ export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, o
         dataset: { mapControl: 'locate' },
       },
       [mapIcon('locate', { class: 'h-5 w-5' }), el('span', { text: t('map.myLocation') })],
+    ),
+  );
+  // Weather (Phase 12G): opens the weather panel for the map centre. The
+  // control is always offered while the map is live; what the panel reports
+  // is the capability gate's decision, not the control's.
+  nodes.push(
+    buttonWithHandler(
+      iconButton({ icon: 'weather', label: t('weather.controlSr') }),
+      onWeather,
     ),
   );
   // Map layers is deliberately disabled and labelled: it is a placeholder for

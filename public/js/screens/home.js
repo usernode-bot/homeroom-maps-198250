@@ -26,6 +26,8 @@ import { createSearchSession, setOfflineSearchCenter, bootQuery } from '../servi
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 import { createAssistantPanel } from '../components/assistant/panel.js';
+import { createWeatherPanel } from '../components/weather/weather-panel.js';
+import { setWeatherCapability, requestWeather } from '../services/weather.js';
 import { present } from '../components/surface.js';
 import { createAssistant, mapContext, fetchStatus, normalizeAction } from '../services/assistant.js';
 import { savedPlaces } from '../services/saved-places.js';
@@ -234,6 +236,11 @@ export async function render(ctx) {
     return;
   }
 
+  // A `?weather=open` deep link boots straight into the weather panel, the
+  // same way ?assistant= reaches the assistant sheet. The forced states have
+  // no live map, so they have no weather surface either.
+  if (!force && weatherParam() === 'open') setTimeout(() => openWeatherPanel(viewRef), 0);
+
   mountMap(view, config, force === 'unsupported' ? 'unsupported' : null);
 }
 
@@ -358,6 +365,7 @@ function liveControls(service, view) {
     onZoomOut: () => service.zoomOut(),
     onResetNorth: () => service.resetNorth(),
     onMyLocation: () => requestLocation(service, view),
+    onWeather: () => openWeatherPanel(view.viewRef),
   });
   column.classList.add('pointer-events-auto');
   return column;
@@ -598,6 +606,49 @@ function navigateForAssistant(nav, viewRef) {
   }
 }
 
+// ── weather (Phase 12G) ──────────────────────────────────────────────────
+
+// The Weather control opens the panel over the map and asks the shared
+// weather session for current conditions at the map centre. The session
+// decides whether a request may happen at all: with no authorized provider
+// (the W1 gate, the shipped state) it fetches nothing and the panel renders
+// the honest "Weather unavailable" state.
+// One panel at a time, like the assistant sheet's `opened` guard: a deep
+// link re-firing on a re-render must not stack a second surface over an
+// open one.
+let weatherPanelOpened = false;
+
+function openWeatherPanel(viewRef) {
+  if (weatherPanelOpened) return;
+  const config = getState().config || {};
+  setWeatherCapability(config.weather || null);
+  let surface = null;
+  const panel = createWeatherPanel({ onClose: () => surface && surface.dismiss() });
+  const body = el('div', { class: 'flex flex-col gap-3' }, [panel.root]);
+  surface = present(body, {
+    label: t('weather.title'),
+    onDismiss: () => {
+      weatherPanelOpened = false;
+      panel.destroy();
+    },
+  });
+  weatherPanelOpened = true;
+  // The centre comes from the live adapter when it exposes one (the map
+  // files are not touched by this phase, and today's adapter does not); with
+  // none, the session records that no honest centre exists and — with the
+  // capability unavailable, as it ships — nothing is fetched either way.
+  const service = viewRef && viewRef.service;
+  let center = null;
+  if (service && typeof service.getCenter === 'function') {
+    try {
+      center = service.getCenter();
+    } catch {
+      center = null;
+    }
+  }
+  requestWeather(center);
+}
+
 function assistantMount(searchSession, viewRef) {
   // Deep-link state for the assistant surface, read like demoState (both the
   // URL query and the query after the hash). `demo` is the staging-only
@@ -715,6 +766,23 @@ function assistantParam() {
   // enforced by the caller) opens the read-only assistant transcript.
   if (value === 'demo' || demo === '1') return 'demo';
   return null;
+}
+
+// The weather deep link ('open'), read like assistantParam reads the
+// assistant's: from the URL query or the query after the hash.
+function weatherParam() {
+  try {
+    let value = new URLSearchParams(window.location.search).get('weather');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('weather');
+    }
+    return value === 'open' ? 'open' : null;
+  } catch {
+    /* no URL, no weather state */
+    return null;
+  }
 }
 
 // The state lives in the query string, but this app hash-routes, so the
