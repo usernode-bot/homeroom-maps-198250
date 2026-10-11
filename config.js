@@ -146,6 +146,16 @@ const OFFLINE_SEARCH_ENABLED = !/^(false|0|no|off)$/i.test(
   String(process.env.OFFLINE_SEARCH_ENABLED || 'true').trim(),
 );
 
+// ── Live traffic (Phase 12D) ──────────────────────────────────────────────
+// The operator switch for the live traffic layer. It can only narrow the
+// live-traffic permission gate (traffic/provider-policy.js, blocker T1),
+// never widen it: while the repository documents no traffic-provider rights
+// (docs/traffic-provider-rights.md does not exist) and no traffic adapter is
+// implemented, flipping this cannot produce a traffic layer. The provider's
+// API key, when one is ever chosen, gets declared in dapp.json by the change
+// that implements its adapter — never here.
+const TRAFFIC_ENABLED = !/^(false|0|no|off)$/i.test(String(process.env.TRAFFIC_ENABLED || 'true').trim());
+
 // Search provider configuration. `SEARCH_PROVIDER` names the adapter the
 // search service uses (see search/providers/); it defaults to Photon, which
 // needs no key and no billing, so the app works out of the box and staging
@@ -247,6 +257,7 @@ module.exports = {
   OFFLINE_ENABLED,
   OFFLINE_MAX_STORAGE_MB,
   OFFLINE_SEARCH_ENABLED,
+  TRAFFIC_ENABLED,
   SEARCH_PROVIDER,
   PHOTON_URL,
   PELIAS_URL,
