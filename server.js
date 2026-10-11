@@ -20,6 +20,7 @@ const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
 const { createReportsStore } = require('./reports/store');
 const { createReportsRouter } = require('./reports/routes');
+const { createReputationStore } = require('./community/reputation-store');
 const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
@@ -62,6 +63,16 @@ const profiles = createProfiles({ pool });
 // proposal store, so a moderation system plugged in there hears report
 // events too (report.flagged and friends).
 const reportsStore = createReportsStore({ pool, policies: communityPolicies });
+
+// Phase 12I, slice 1: the reputation ledger. Invisible for now — no routes,
+// no UI. It listens on the shared policies registry for the committed events
+// both stores already publish and records the reviewer-confirmed ones (the
+// first publish, accept, implement, report verify) in an append-only,
+// idempotent ledger; a person's total is always SUM(points) on read, never a
+// stored counter. The moderation surfaces and the reputation API arrive in
+// later slices of the approved spec.
+const reputationStore = createReputationStore({ pool });
+reputationStore.register(communityPolicies);
 
 // AI assistant (Phase 11). The ONLY AI path is the platform LLM proxy,
 // enabled only when BOTH USERNODE_LLM_PROXY_URL and USERNODE_LLM_PROXY_TOKEN
@@ -510,6 +521,7 @@ async function start() {
   await tripStore.migrate();
   if (IS_STAGING) await tripStore.seedStaging();
   await reportsStore.migrate();
+  await reputationStore.migrate();
   if (IS_STAGING) await reportsStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
