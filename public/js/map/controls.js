@@ -1,6 +1,6 @@
 // The map overlay controls, rendered into Home's existing top-right
 // `data-map-controls` slot. Zoom in, zoom out, reset north, My location and
-// Traffic are real buttons; Map layers stays the disabled "Coming soon"
+// Weather and Traffic are real buttons; Map layers stays the disabled "Coming soon"
 // placeholder.
 //
 // Which controls appear is driven by the adapter's capability flags: a device
@@ -63,6 +63,7 @@ export function mapControls({
   onZoomOut,
   onResetNorth,
   onMyLocation,
+  onWeather,
   myLocationOn,
   onTraffic,
 }) {
@@ -90,6 +91,15 @@ export function mapControls({
         dataset: { mapControl: 'locate' },
       },
       [mapIcon('locate', { class: 'h-5 w-5' }), el('span', { text: t('map.myLocation') })],
+    ),
+  );
+  // Weather (Phase 12G): opens the weather panel for the map centre. The
+  // control is always offered while the map is live; what the panel reports
+  // is the capability gate's decision, not the control's.
+  nodes.push(
+    buttonWithHandler(
+      iconButton({ icon: 'weather', label: t('weather.controlSr') }),
+      onWeather,
     ),
   );
   // Traffic (Phase 12D): opens the honest live-traffic panel. Not
