@@ -70,9 +70,14 @@ export function createMapService(mapConfig, { onState, onAttribution, onTerrainE
       // Buildings pass through from the renderer alone: they are detected
       // from the live style, not advertised by configuration.
       const configCaps = (config && config.capabilities) || {};
+      // Phase 12D: the live-traffic capability rides the same way, from
+      // map.capabilities.traffic (the T1 provider gate folded in). False
+      // whenever the config does not say otherwise — fail closed.
+      const traffic = Boolean(configCaps.traffic);
       return {
         ...base,
         offline,
+        traffic,
         pitch: Boolean(base.pitch) && Boolean(configCaps.pitch),
         terrain: Boolean(base.terrain) && Boolean(configCaps.terrain),
       };
@@ -142,6 +147,29 @@ export function createMapService(mapConfig, { onState, onAttribution, onTerrainE
       return destroyed;
     },
   };
+}
+
+// Phase 12D: the Home traffic panel's state, derived fail-closed from the
+// server config's `traffic` block. PURE and DOM-free so tests can prove the
+// honesty property directly: it returns only i18n KEYS from a fixed
+// allowlist — never strings, never traffic values, never anything that could
+// be mistaken for live data. With the T1 gate closed (the only reachable
+// state today) `enabled` is false and the panel says so plainly; the
+// enabled branch exists so a future authorized provider change reuses this
+// exact copy instead of inventing new wording.
+export function trafficPanelState(traffic, { online = true } = {}) {
+  const block = traffic && typeof traffic === 'object' ? traffic : {};
+  // Fail closed: only an explicit `enabled: true` counts. A missing block, a
+  // wrong shape or a stale snapshot all read as "not connected".
+  const enabled = block.enabled === true;
+  const lines = [];
+  if (!enabled) lines.push('traffic.panelUnavailable');
+  if (!online) lines.push('traffic.state.offline');
+  // The community pointer shows in every state: community reports stay what
+  // they are, and are never promoted to verified live traffic.
+  lines.push('traffic.panelCommunity');
+  if (!enabled) lines.push('traffic.panelRights');
+  return { enabled, lines, checkAgain: 'traffic.checkAgain' };
 }
 
 export { MapError, MapErrorKind };
