@@ -111,7 +111,7 @@ const assistantServices = {
   getDirections: (params) => routingApi.run(params),
   getTrip: (viewer, id) => tripStore.get(viewer, id),
   listTrips: (viewer) => tripStore.list(viewer),
-  listSaved: (viewer) => savedStore.listPlaces(viewer.id),
+  listSaved: (viewer) => savedStore.listPlaces(viewer),
   listProposals: (viewer, opts = {}) =>
     communityStore.list(viewer, { view: opts.view || 'recent', limit: opts.limit || 10 }),
   listReports: (viewer, opts = {}) =>
@@ -595,7 +595,8 @@ app.get('*', (req, res) => {
 
 async function start() {
   // Idempotent boot migration: the community tables (all staging:private),
-  // the Phase 7 saved-places tables, the report tables (reports and
+  // the saved-lists tables (all staging:private; a Phase 7 set is moved aside
+  // and copied in once, see saved/store.js), the report tables (reports and
   // report_status_events public, the reaction and flag tables
   // staging:private), and the Phase 12F location-sharing tables (both
   // staging:private). Place and map tables arrive with their features in

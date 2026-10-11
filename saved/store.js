@@ -89,6 +89,124 @@ CREATE TABLE IF NOT EXISTS saved_user_state (
 COMMENT ON TABLE saved_user_state IS 'staging:private';
 `;
 
+// Phase 7 shipped saved_lists and saved_list_items under these same names in
+// a different shape: keyed on user_id, with the places themselves normalised
+// into saved_places. Production has those tables, and so does every staging
+// copy of it, so there CREATE TABLE IF NOT EXISTS above is a no-op and the
+// first index on owner_id fails the boot. migrate() therefore moves a Phase 7
+// set aside first, under *_phase7 names (kept, not dropped, and private like
+// the tables they feed), and copies it into the new tables in the same
+// transaction. The primary-key indexes and the list id sequence move with
+// them, so the new tables get the usual names.
+const RETIRE_PHASE7_SQL = `
+ALTER TABLE saved_list_items RENAME TO saved_list_items_phase7;
+ALTER INDEX IF EXISTS saved_list_items_pkey RENAME TO saved_list_items_phase7_pkey;
+ALTER TABLE saved_lists RENAME TO saved_lists_phase7;
+ALTER INDEX IF EXISTS saved_lists_pkey RENAME TO saved_lists_phase7_pkey;
+ALTER SEQUENCE IF EXISTS saved_lists_id_seq RENAME TO saved_lists_phase7_id_seq;
+ALTER TABLE saved_places RENAME TO saved_places_phase7;
+ALTER INDEX IF EXISTS saved_places_pkey RENAME TO saved_places_phase7_pkey;
+COMMENT ON TABLE saved_list_items_phase7 IS 'staging:private';
+COMMENT ON TABLE saved_lists_phase7 IS 'staging:private';
+COMMENT ON TABLE saved_places_phase7 IS 'staging:private';
+`;
+
+// Phase 7's default lists by system_key, in model.DEFAULT_LISTS order, so a
+// copied default list wears the emoji a new one gets.
+const PHASE7_DEFAULT_KEYS = ['favorites', 'want_to_visit', 'travel', 'restaurants'];
+
+// Where Phase 7 places that sat in no list go: Phase 7 showed them under "All
+// saved places", which the new lists have no counterpart for.
+const PHASE7_UNLISTED = { name: 'Saved places', emoji: '🗺️' };
+
+async function hasPhase7Schema(db) {
+  const { rows } = await db.query(
+    `SELECT 1 FROM pg_attribute
+      WHERE attrelid = to_regclass('saved_lists') AND attname = 'user_id' AND NOT attisdropped`,
+  );
+  return rows.length > 0;
+}
+
+// Copy a retired Phase 7 set into the new tables. Lists keep their ids, so a
+// link to one still opens it, and stay private: a Phase 7 list was only ever
+// its owner's. Phase 7 stored no usernames, so the owner's id stands in until
+// the owner next edits the list, which is the only way anyone else can come
+// to see it (update() writes the real one).
+async function copyPhase7(client) {
+  const { rows: lists } = await client.query('SELECT * FROM saved_lists_phase7 ORDER BY id');
+  for (const l of lists) {
+    const i = PHASE7_DEFAULT_KEYS.indexOf(l.system_key);
+    await client.query(
+      `INSERT INTO saved_lists (id, owner_id, owner_username, name, emoji, visibility, created_at, updated_at)
+       VALUES ($1, $2, $2, $3, $4, 'private', $5, $6)`,
+      [l.id, l.user_id, l.name, i >= 0 ? model.DEFAULT_LISTS[i].emoji : model.EMOJIS[0], l.created_at, l.updated_at],
+    );
+  }
+  await client.query(
+    `SELECT setval(pg_get_serial_sequence('saved_lists', 'id'), GREATEST((SELECT max(id) FROM saved_lists), 1))`,
+  );
+  // Phase 7 could not delete a default list, so everyone with a Phase 7 list
+  // has all four, copied above: a second set must not be added on their
+  // first visit.
+  await client.query(
+    `INSERT INTO saved_user_state (user_id)
+     SELECT DISTINCT user_id FROM saved_lists_phase7 ON CONFLICT (user_id) DO NOTHING`,
+  );
+
+  // One item per list membership, plus one per place in no list. The
+  // snapshot is the one the new client sends for the same place, so its
+  // place_key matches if the place is added again. A place without a name or
+  // coordinates cannot be an item and stays only in saved_places_phase7.
+  const { rows: places } = await client.query(
+    `SELECT p.*, li.list_id, COALESCE(li.created_at, p.created_at) AS added_at
+       FROM saved_places_phase7 p
+       LEFT JOIN saved_list_items_phase7 li ON li.user_id = p.user_id AND li.place_id = p.place_id
+      ORDER BY added_at, p.place_id`,
+  );
+  const unlisted = new Map();
+  let copied = 0;
+  for (const p of places) {
+    // Checked here, not left to validatePlace: Number(null) is 0, which
+    // would put a place with no coordinates at 0,0.
+    if (p.lat == null || p.lng == null) continue;
+    let place;
+    try {
+      place = model.validatePlace({
+        name: p.name,
+        lat: p.lat,
+        lng: p.lng,
+        address: p.address,
+        kind: p.subcategory || p.category,
+        provider: p.source && p.source !== 'unknown' ? p.source : null,
+        id: p.place_id,
+      });
+    } catch {
+      continue;
+    }
+    let listId = p.list_id;
+    if (listId == null) {
+      if (!unlisted.has(p.user_id)) {
+        const { rows } = await client.query(
+          `INSERT INTO saved_lists (owner_id, owner_username, name, emoji, visibility)
+           VALUES ($1, $1, $2, $3, 'private') RETURNING id`,
+          [p.user_id, PHASE7_UNLISTED.name, PHASE7_UNLISTED.emoji],
+        );
+        unlisted.set(p.user_id, rows[0].id);
+      }
+      listId = unlisted.get(p.user_id);
+    }
+    const { rowCount } = await client.query(
+      `INSERT INTO saved_list_items
+         (list_id, place_key, place_name, place_address, place_kind, place_provider, lat, lng, source, added_by_id, added_by_username, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'owner',$9,$9,$10)
+       ON CONFLICT (list_id, place_key) DO NOTHING`,
+      [listId, model.placeKeyOf(place), place.name, place.address, place.kind, place.provider, place.lat, place.lng, p.user_id, p.added_at],
+    );
+    copied += rowCount;
+  }
+  console.log(`[saved] copied Phase 7 saved places: ${lists.length} lists, ${copied} of ${places.length} list entries`);
+}
+
 function iso(v) {
   return v ? new Date(v).toISOString() : null;
 }
@@ -203,7 +321,14 @@ function createStore({ pool }) {
   }
 
   async function migrate() {
-    await pool.query(SCHEMA_SQL);
+    await tx(async (client) => {
+      // Two replicas booting together must not both move Phase 7 aside.
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('homeroom-maps:saved-migrate'))`);
+      const phase7 = await hasPhase7Schema(client);
+      if (phase7) await client.query(RETIRE_PHASE7_SQL);
+      await client.query(SCHEMA_SQL);
+      if (phase7) await copyPhase7(client);
+    });
   }
 
   // Read one list row and apply THE visibility predicate. A viewer who
@@ -356,10 +481,12 @@ SELECT l.*,
         merged.visibility === 'link'
           ? row.share_token || model.generateShareToken()
           : row.share_token;
+      // owner_username is rewritten too: a list copied from Phase 7 carries
+      // the owner's id there until this, the edit that can make it visible.
       await client.query(
-        `UPDATE saved_lists SET name = $2, emoji = $3, visibility = $4, share_token = $5, updated_at = now()
+        `UPDATE saved_lists SET name = $2, emoji = $3, visibility = $4, share_token = $5, owner_username = $6, updated_at = now()
           WHERE id = $1`,
-        [id, merged.name, merged.emoji, merged.visibility, shareToken],
+        [id, merged.name, merged.emoji, merged.visibility, shareToken, viewer.username],
       );
     });
     return toCard(
@@ -615,6 +742,29 @@ SELECT l.*,
     return { ok: true };
   }
 
+  // The assistant's get_saved_places: the places in the viewer's own lists,
+  // newest first, once each however many of their lists hold one. Items are
+  // snapshots that do not keep the search result's id, so none is given.
+  async function listPlaces(viewer) {
+    const { rows } = await pool.query(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (i.place_key) i.*
+           FROM saved_list_items i JOIN saved_lists l ON l.id = i.list_id
+          WHERE l.owner_id = $1
+          ORDER BY i.place_key, i.created_at DESC
+       ) p ORDER BY p.created_at DESC LIMIT 100`,
+      [viewer.id],
+    );
+    return rows.map((r) => ({
+      id: null,
+      name: r.place_name,
+      address: r.place_address,
+      category: r.place_kind,
+      lat: Number(r.lat),
+      lng: Number(r.lng),
+    }));
+  }
+
   // A list's directory position follows its latest change, so an item added
   // to a public list moves it up. Called inside the write's transaction when
   // one is open.
@@ -746,6 +896,7 @@ SELECT l.*,
     listComments,
     addComment,
     deleteComment,
+    listPlaces,
   };
 }
 
