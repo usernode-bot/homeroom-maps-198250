@@ -6,12 +6,15 @@ const {
   IS_STAGING,
   PORT,
   PLATFORM_ORIGIN,
+  PLATFORM_API_BASE,
   JWT_PUBLIC_KEY,
   APP_AUDIENCE,
   PUBLIC_DIR,
   resolveMapConfig,
   COMMUNITY_REVIEWERS,
+  LLM_PROXY_TOKEN,
   LLM_ENABLED,
+  LOCATION_SHARING_ENABLED,
 } = require('./config');
 const searchApi = require('./search');
 const { createPolicies } = require('./community/policies');
@@ -20,6 +23,9 @@ const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
 const { createReportsStore } = require('./reports/store');
 const { createReportsRouter } = require('./reports/routes');
+const { createSharingStore } = require('./sharing/store');
+const { createSharingRouter } = require('./sharing/routes');
+const { createMembersClient } = require('./sharing/members');
 const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
@@ -62,6 +68,19 @@ const profiles = createProfiles({ pool });
 // proposal store, so a moderation system plugged in there hears report
 // events too (report.flagged and friends).
 const reportsStore = createReportsStore({ pool, policies: communityPolicies });
+
+// Location sharing (Phase 12F): one active share per person, recipients from
+// the platform's real member roster, current position only. Both tables are
+// staging:private, so staging starts with them empty; the demo state is
+// client-side canned data and nothing here seeds the visitor. `members` is
+// the server-side client for the platform's member roster and user
+// directory, authenticated with the caller's forwarded token (plus the app
+// token in production) and caching the roster for 60 s.
+const sharingStore = createSharingStore({ pool });
+const sharingMembers = createMembersClient({
+  platformApiBase: PLATFORM_API_BASE,
+  appToken: LLM_PROXY_TOKEN,
+});
 
 // AI assistant (Phase 11). The ONLY AI path is the platform LLM proxy,
 // enabled only when BOTH USERNODE_LLM_PROXY_URL and USERNODE_LLM_PROXY_TOKEN
@@ -227,6 +246,7 @@ app.get('/api/config', (_req, res) => {
       ai: Boolean(LLM_ENABLED),
       traffic: false,
       offline: offline.offline,
+      locationSharing: Boolean(LOCATION_SHARING_ENABLED),
     },
   });
 });
@@ -348,6 +368,16 @@ app.use('/api/trips', createTripsRouter({ store: tripStore, isStaging: IS_STAGIN
 app.use(
   '/api/reports',
   createReportsRouter({ store: reportsStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
+);
+// Location sharing (Phase 12F). One mount line; the routes are exhaustive
+// (see sharing/routes.js) and the store enforces ownership in its SQL.
+app.use(
+  '/api/sharing',
+  createSharingRouter({
+    store: sharingStore,
+    members: sharingMembers,
+    enabled: LOCATION_SHARING_ENABLED,
+  }),
 );
 
 // Places — the two read routes of the place service (places/index.js). Both
@@ -498,8 +528,9 @@ app.get('*', (req, res) => {
 
 async function start() {
   // Idempotent boot migration: the community tables (all staging:private),
-  // the Phase 7 saved-places tables, and the report tables (reports and
+  // the Phase 7 saved-places tables, the report tables (reports and
   // report_status_events public, the reaction and flag tables
+  // staging:private), and the Phase 12F location-sharing tables (both
   // staging:private). Place and map tables arrive with their features in
   // later stages. The starter template's `presses` table is intentionally
   // NOT created here (a database that already has it keeps it; nothing
@@ -511,6 +542,7 @@ async function start() {
   if (IS_STAGING) await tripStore.seedStaging();
   await reportsStore.migrate();
   if (IS_STAGING) await reportsStore.seedStaging();
+  await sharingStore.migrate();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

@@ -2,14 +2,15 @@
 
 A global map and location platform, built together with its community.
 
-> **Phases 0 to 11 are in place**, except where a phase is explicitly still a
+> **Phases 0 to 12F are in place**, except where a phase is explicitly still a
 > placeholder. The app shell, theme, shared UI, worldwide place search, the
 > Places model/card/detail views, directions and routing, community proposals
 > and voting, saved places and lists, navigation, the English/Indonesian i18n
-> layer, trip planning and the AI map assistant all work. Still not built, and
+> layer, trip planning, the AI map assistant, offline maps with offline search
+> and location sharing all work. Still not built, and
 > clearly labelled as placeholders: a place-data provider, the remaining
-> community tools (contributions, discussions), traffic, transit, offline maps
-> and location sharing. `/api/config` reports the configured `mapProvider`
+> community tools (contributions, discussions), traffic and transit.
+> `/api/config` reports the configured `mapProvider`
 > (the keyless MapLibre/OpenFreeMap default) and `placeProvider: null`: the
 > map frame is live, per-place detail enrichment still has no provider, and
 > `features.ai` follows the platform LLM proxy (on only when both proxy values
@@ -150,11 +151,10 @@ A global map and location platform, built together with its community.
 Map canvas, "Search this area" / "Nearby" controls (the search service
 already accepts a map area and a location with a radius; only the
 map-anchored UI is missing), points-of-interest browsing from a dedicated
-place-data provider, traffic, public transit, the offline download itself
-(blocker B2, see above) and location
-sharing, and the community features after proposals and voting
-(contributions, discussions). The Home map frame is live; `/api/config`
-reports the configured `mapProvider` and `placeProvider: null`.
+place-data provider, traffic, public transit, and the community features
+after proposals and voting (contributions, discussions). The Home map frame
+is live; `/api/config` reports the configured `mapProvider` and
+`placeProvider: null`.
 
 ## Stack
 

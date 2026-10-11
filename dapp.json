@@ -64,6 +64,12 @@
       "description": "Operator switch for offline search (Phase 12B). Turned on by default. It is independent of the offline-download gate: searching regions a device has already stored is a device-local read, so it still works while tile downloads are closed. Setting it off makes the offline search states honest; online search is unaffected.",
       "required": false,
       "default": "true"
+    },
+    {
+      "key": "LOCATION_SHARING_ENABLED",
+      "description": "Operator switch for location sharing (Phase 12F). Turned on by default. Setting it off makes every /api/sharing route answer the honest not_configured 501 and the screen show its unavailable state; it can never change which code runs or widen what is shared.",
+      "required": false,
+      "default": "true"
     }
   ],
   "visibility": {
@@ -484,6 +490,47 @@
       "path": "/#/discover",
       "expectSelector": "[data-places-search]",
       "expectText": "Find a place"
+    },
+    {
+      "id": "sharing.screen",
+      "name": "Location Sharing screen renders both halves",
+      "path": "/#/sharing",
+      "expectSelector": "[data-sharing-host]",
+      "visual": true,
+      "impact": [
+        "sharing/**",
+        "public/js/screens/sharing.js",
+        "public/js/services/sharing.js",
+        "public/js/services/sharing-core.js",
+        "public/js/components/sharing/**",
+        "public/js/screens/profile.js",
+        "public/js/screens/home.js",
+        "public/js/app.js",
+        "public/js/i18n/**",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Profile links to Location Sharing",
+      "path": "/#/profile",
+      "expectText": "Location Sharing"
+    },
+    {
+      "name": "Location Sharing copy in Indonesian",
+      "path": "/#/sharing?lang=id",
+      "expectText": "Berbagi Lokasi"
+    },
+    {
+      "name": "Location Sharing demo renders canned data",
+      "path": "/#/sharing?demo=1",
+      "expectText": "Staging demo"
+    },
+    {
+      "name": "Location sharing feature-off state is honest",
+      "path": "/#/sharing?sharing=unavailable",
+      "expectText": "Location sharing is not available"
     }
   ],
   "permissions": [
