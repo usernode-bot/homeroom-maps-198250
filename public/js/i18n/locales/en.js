@@ -382,6 +382,27 @@ export default {
   'traffic.legendFlowing': 'No jam reported',
   'traffic.legendSource': 'From community reports',
 
+  // live traffic (Phase 12D) — the honest panel while no provider is
+  // connected (the T1 permission gate is closed). The state.* keys are
+  // defined for the future provider change; none is reachable today.
+  'traffic.control': 'Traffic',
+  'traffic.panelTitle': 'Live traffic',
+  'traffic.panelUnavailable':
+    'Live traffic is not connected yet. No traffic provider is set up, so no traffic layer is shown and no traffic colours appear on the map.',
+  'traffic.panelCommunity':
+    'Road conditions you can see today come from community reports. They appear as map pins, and on a route in Directions.',
+  'traffic.panelRights':
+    'Traffic data rights are not documented yet. When a provider is connected, its name and attribution appear here.',
+  'traffic.checkAgain': 'Check again',
+  'traffic.state.offline': 'You are offline. Live traffic needs a connection.',
+  'traffic.state.loading': 'Checking live traffic…',
+  'traffic.state.stale': 'Traffic data is from {time} and may be out of date.',
+  'traffic.state.noCoverage': 'No live traffic data for this area.',
+  'traffic.state.outage': 'The traffic provider is not answering right now.',
+  'traffic.state.rateLimited': 'The traffic provider is limiting requests right now. Try again in a moment.',
+  'traffic.state.timeout': 'The traffic provider took too long to answer.',
+  "traffic.state.authFailed": "The traffic provider refused this app's credentials.",
+
   // assistant (Phase 11) — the AI map assistant sheet
   'assistant.title': 'Ask about the map',
   'assistant.open': 'Ask about the map',

@@ -381,6 +381,27 @@ export default {
   'traffic.legendFlowing': 'Tidak ada laporan macet',
   'traffic.legendSource': 'Dari laporan komunitas',
 
+  // lalu lintas langsung (Fase 12D) — panel jujur saat belum ada penyedia
+  // (gerbang izin T1 masih tertutup). Kunci state.* disiapkan untuk perubahan
+  // penyedia di masa depan; hari ini tidak ada yang bisa mencapainya.
+  'traffic.control': 'Lalu lintas',
+  'traffic.panelTitle': 'Lalu lintas langsung',
+  'traffic.panelUnavailable':
+    'Lalu lintas langsung belum tersambung. Belum ada penyedia lalu lintas, jadi tidak ada lapisan lalu lintas dan tidak ada warna lalu lintas di peta.',
+  'traffic.panelCommunity':
+    'Kondisi jalan yang terlihat hari ini berasal dari laporan komunitas. Laporan itu muncul sebagai pin di peta dan pada rute di Rute.',
+  'traffic.panelRights':
+    'Hak data lalu lintas belum didokumentasikan. Nanti, nama dan atribusi penyedia akan muncul di sini.',
+  'traffic.checkAgain': 'Periksa lagi',
+  'traffic.state.offline': 'Anda sedang luring. Lalu lintas langsung butuh koneksi.',
+  'traffic.state.loading': 'Memeriksa lalu lintas langsung…',
+  'traffic.state.stale': 'Data lalu lintas dari {time} dan mungkin sudah tidak akurat.',
+  'traffic.state.noCoverage': 'Tidak ada data lalu lintas langsung untuk area ini.',
+  'traffic.state.outage': 'Penyedia lalu lintas sedang tidak menjawab.',
+  'traffic.state.rateLimited': 'Penyedia lalu lintas sedang membatasi permintaan. Coba lagi nanti.',
+  'traffic.state.timeout': 'Penyedia lalu lintas butuh terlalu lama untuk menjawab.',
+  'traffic.state.authFailed': 'Penyedia lalu lintas menolak kredensial aplikasi ini.',
+
   // assistant (Phase 11) — lembar asisten peta AI
   'assistant.title': 'Tanya tentang peta',
   'assistant.open': 'Tanya tentang peta',
