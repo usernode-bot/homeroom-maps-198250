@@ -481,6 +481,21 @@ export default {
   'offline.searchKindVillage': 'Desa',
   'offline.searchKindSuburb': 'Lingkungan',
   'offline.searchKindPlace': 'Tempat',
+
+  // Routing offline (Fase 12C). Hanya status yang jujur, tanpa em dash.
+  'offline.routeDisabledTitle': 'Routing offline dimatikan',
+  'offline.routeDisabledBody':
+    'Rute tidak bisa dihitung dari area terunduh selama sakelar ini mati. Routing online tetap berfungsi saat Anda terhubung.',
+  'offline.routeUnsupportedTitle': 'Browser ini tidak bisa menyimpan area offline',
+  'offline.routeUnsupportedBody':
+    'Routing offline membutuhkan IndexedDB, yang tidak disediakan browser ini.',
+  'offline.routeNoAreasTitle': 'Tidak ada area offline di perangkat ini',
+  'offline.routeNoAreasBody':
+    'Routing offline hanya bekerja di dalam area terunduh, dan perangkat ini tidak punya satu pun.',
+  'offline.routeNoRoadsTitle': 'Routing offline belum tersedia di versi ini',
+  'offline.routeNoRoadsBody':
+    'Rute tidak bisa dihitung dari area terunduh di build ini. Routing online tetap berfungsi saat Anda terhubung.',
+
   'profile.offlineTitle': 'Area Offline',
   'profile.offlineBody': 'Unduh area peta untuk digunakan tanpa koneksi.',
 

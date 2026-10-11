@@ -489,4 +489,19 @@ export default {
   'offline.searchKindSuburb': 'Neighbourhood',
   'offline.searchKindPlace': 'Place',
 
+  // Offline routing (Phase 12C). Honest states only: no routing engine ships
+  // in this build, so none of these offers a route, a distance or a duration.
+  'offline.routeDisabledTitle': 'Offline routing is turned off',
+  'offline.routeDisabledBody':
+    'Routes cannot be calculated from downloaded areas while the switch is off. Online routing still works when you are connected.',
+  'offline.routeUnsupportedTitle': 'This browser cannot hold offline areas',
+  'offline.routeUnsupportedBody':
+    'Offline routing needs IndexedDB, which this browser does not provide.',
+  'offline.routeNoAreasTitle': 'No offline areas on this device',
+  'offline.routeNoAreasBody':
+    'Offline routing works only inside a downloaded area, and this device has none.',
+  'offline.routeNoRoadsTitle': 'Offline routing is not available in this version',
+  'offline.routeNoRoadsBody':
+    'Routes cannot be calculated from downloaded areas in this build. Online routing still works when you are connected.',
+
 };

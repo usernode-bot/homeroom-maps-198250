@@ -484,6 +484,32 @@
       "path": "/#/discover",
       "expectSelector": "[data-places-search]",
       "expectText": "Find a place"
+    },
+    {
+      "id": "directions.offline-state",
+      "name": "Directions shows the honest offline routing state while offline",
+      "path": "/#/directions?to=Berlin%2C52.52%2C13.405&from=Hamburg%2C53.55%2C9.99&navigate=1&offline=1",
+      "expectSelector": "[data-offline-routing-state=\"disabled\"]",
+      "expectText": "Offline routing is turned off",
+      "visual": true,
+      "impact": [
+        "public/js/screens/directions.js",
+        "public/js/services/offline-routing*.js",
+        "public/js/services/offline-search-capability.js",
+        "public/js/services/routing.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "offline/routing-config.js",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Directions offline state copy in Indonesian",
+      "path": "/#/directions?to=Berlin%2C52.52%2C13.405&from=Hamburg%2C53.55%2C9.99&navigate=1&offline=1&lang=id",
+      "expectText": "Routing offline dimatikan"
     }
   ],
   "permissions": [
