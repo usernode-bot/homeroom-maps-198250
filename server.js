@@ -34,6 +34,7 @@ const { createAnthropicProxy } = require('./assistant/provider');
 const { createAssistantRouter } = require('./assistant/routes');
 const { resolveOfflineConfig } = require('./offline');
 const { resolveOfflineSearchConfig } = require('./offline/search-config');
+const { resolveTrafficConfig } = require('./traffic');
 
 const app = express();
 const port = PORT;
@@ -209,6 +210,12 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 //   { configured: false, provider: null, blocker: 'W1', reason: ... }
 // and the client renders the honest "Weather unavailable" state. The
 // features.weather flag mirrors it, so every surface reads one truth.
+// The `traffic` block (Phase 12D) reports the live-traffic capability
+// resolved by traffic/index.js: while the live-traffic permission gate (T1)
+// is closed — no provider is chosen, no terms accepted, no rights documented
+// — `traffic.enabled` is false, `blocker` names T1, and no adapter exists.
+// map.capabilities.traffic and features.traffic mirror that same effective
+// value, so every surface reads one truth.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   const routing = routingApi.resolveRoutingConfig();
@@ -219,23 +226,28 @@ app.get('/api/config', (_req, res) => {
   // .offline and features.offline keep their Phase 12A values untouched.
   const offlineSearch = resolveOfflineSearchConfig();
   const weather = resolveWeatherConfig();
+  const traffic = resolveTrafficConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
     mapProvider,
-    map: { ...map, capabilities: { ...map.capabilities, offline: offline.offline } },
+    map: {
+      ...map,
+      capabilities: { ...map.capabilities, offline: offline.offline, traffic: traffic.enabled },
+    },
     searchProvider: searchApi.activeProviderName(),
     routing,
     placeProvider: placesApi.activeProviderName(),
     offline: { ...offline, search: offlineSearch },
     weather,
+    traffic,
     features: {
       map: Boolean(map.configured),
       search: true,
       directions: Boolean(routing.configured),
       communityVoting: true,
       ai: Boolean(LLM_ENABLED),
-      traffic: false,
+      traffic: traffic.enabled,
       offline: offline.offline,
       weather: Boolean(weather.configured),
     },
