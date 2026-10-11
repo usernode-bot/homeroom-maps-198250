@@ -70,6 +70,17 @@
       "description": "Operator switch for location sharing (Phase 12F). Turned on by default. Setting it off makes every /api/sharing route answer the honest not_configured 501 and the screen show its unavailable state; it can never change which code runs or widen what is shared.",
       "required": false,
       "default": "true"
+    },
+    {
+      "key": "WEATHER_PROVIDER",
+      "description": "Which weather provider adapter to use for current conditions at the map centre (Phase 12G). No adapter is implemented yet, and no weather source is documented as authorized for this app, so leaving this unset keeps /api/weather/current answering 501 instead of serving made-up weather. A name alone is not enough either: the W1 gate additionally requires docs/weather-provider-rights.md to authorize the provider for live data with named evidence. Selection criteria, in order: (1) licensing that permits live use and display with attribution, (2) worldwide point coverage at the precision the panel shows, (3) cost at this app's scale, (4) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
+      "required": false
+    },
+    {
+      "key": "TRAFFIC_ENABLED",
+      "description": "Operator switch for the live traffic layer (Phase 12D). Can only narrow the live-traffic permission gate (T1), never widen it: while the repository documents no traffic-provider rights (docs/traffic-provider-rights.md does not exist) and no traffic adapter is implemented, live traffic stays honestly unavailable no matter how this is set. No traffic API key is declared here; the chosen provider's key gets declared in the same change that implements its adapter, per the platform secrets convention.",
+      "required": false,
+      "default": "true"
     }
   ],
   "visibility": {
@@ -105,6 +116,22 @@
       "name": "Home map not-configured state",
       "path": "/#/?map=unconfigured",
       "expectText": "Map is not configured yet"
+    },
+    {
+      "name": "Home shows the Traffic control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"traffic\"]"
+    },
+    {
+      "name": "Traffic panel shows the honest not-connected state",
+      "path": "/#/?traffic=open",
+      "expectSelector": "[data-traffic-panel]",
+      "expectText": "Live traffic is not connected yet"
+    },
+    {
+      "name": "Traffic panel copy in Indonesian",
+      "path": "/#/?traffic=open&lang=id",
+      "expectText": "Lalu lintas langsung belum tersambung"
     },
     {
       "name": "Search bar renders on Home",
@@ -531,6 +558,37 @@
       "name": "Location sharing feature-off state is honest",
       "path": "/#/sharing?sharing=unavailable",
       "expectText": "Location sharing is not available"
+    },
+    {
+      "name": "Home shows the weather control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"weather\"]"
+    },
+    {
+      "id": "weather.panel",
+      "name": "Weather panel reports the honest unavailable state",
+      "path": "/#/?weather=open",
+      "expectSelector": "[data-weather-panel][data-weather-state=\"unavailable\"]",
+      "expectText": "Weather unavailable",
+      "visual": true,
+      "impact": [
+        "weather/**",
+        "public/js/services/weather*.js",
+        "public/js/components/weather/**",
+        "public/js/map/controls.js",
+        "public/js/map/icons.js",
+        "public/js/screens/home.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Weather panel copy in Indonesian",
+      "path": "/#/?weather=open&lang=id",
+      "expectText": "Cuaca tidak tersedia"
     }
   ],
   "permissions": [

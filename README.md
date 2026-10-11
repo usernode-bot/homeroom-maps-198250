@@ -132,6 +132,22 @@ A global map and location platform, built together with its community.
   rendered. The single unlock is a verifiable `docs/tile-provider-rights.md`
   (provider, `bulk-download: permitted`, evidence URL) — nothing else, and no
   code change, enables downloads.
+- **Weather (Phase 12G, no provider connected)** — the Weather control on the
+  live map opens a localized panel that reports current conditions for the
+  map area on screen: state machine (`public/js/services/weather-core.js`)
+  with unavailable/loading/ready/stale/offline/error states, a 60 s client
+  refresh throttle, a 1 km auto-refetch on centre moves, a one-hour staleness
+  window and a generation guard so a superseded request can never settle
+  into the panel. The server pipeline (`weather/index.js`) mirrors search:
+  validation, the W1 authorization gate, a 10-minute per-point cache and a
+  shared politeness bucket, and a normalized `WeatherCurrent` payload that
+  carries only real, attributed field values. **No weather provider exists
+  and none is fabricated:** the registry ships empty and `WEATHER_PROVIDER`
+  has no default, so `/api/weather/current` answers 501 and the panel leads
+  with "Weather unavailable". The single unlock is the same pattern as
+  offline's B2: a committed `docs/weather-provider-rights.md` naming the
+  provider, an explicit `live-data: authorized` line and an evidence URL —
+  plus the adapter change that implements it (see `docs/weather.md`).
 - **Error boundary and loading states** — a screen that throws shows the
   shared error state with a Try again action; fetches show a skeleton.
 - **Service interfaces** (`public/js/services/*`) with real implementations
@@ -151,9 +167,11 @@ A global map and location platform, built together with its community.
 Map canvas, "Search this area" / "Nearby" controls (the search service
 already accepts a map area and a location with a radius; only the
 map-anchored UI is missing), points-of-interest browsing from a dedicated
-place-data provider, traffic, public transit, and the community features
-after proposals and voting (contributions, discussions). The Home map frame
-is live; `/api/config` reports the configured `mapProvider` and
+place-data provider, traffic, public transit, the weather feed itself
+(no provider connected, see above), the offline download itself
+(blocker B2, see above), and the community features after proposals and
+voting (contributions, discussions). The Home map frame is live;
+`/api/config` reports the configured `mapProvider` and
 `placeProvider: null`.
 
 ## Stack

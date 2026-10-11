@@ -164,6 +164,16 @@ const LOCATION_SHARING_ENABLED = !/^(false|0|no|off)$/i.test(
   String(process.env.LOCATION_SHARING_ENABLED || 'true').trim(),
 );
 
+// ── Live traffic (Phase 12D) ──────────────────────────────────────────────
+// The operator switch for the live traffic layer. It can only narrow the
+// live-traffic permission gate (traffic/provider-policy.js, blocker T1),
+// never widen it: while the repository documents no traffic-provider rights
+// (docs/traffic-provider-rights.md does not exist) and no traffic adapter is
+// implemented, flipping this cannot produce a traffic layer. The provider's
+// API key, when one is ever chosen, gets declared in dapp.json by the change
+// that implements its adapter — never here.
+const TRAFFIC_ENABLED = !/^(false|0|no|off)$/i.test(String(process.env.TRAFFIC_ENABLED || 'true').trim());
+
 // Search provider configuration. `SEARCH_PROVIDER` names the adapter the
 // search service uses (see search/providers/); it defaults to Photon, which
 // needs no key and no billing, so the app works out of the box and staging
@@ -240,6 +250,31 @@ const PLACE_PROVIDER = (process.env.PLACE_PROVIDER || '')
   .trim()
   .toLowerCase();
 
+// Weather provider configuration (Phase 12G).
+//
+// WEATHER_PROVIDER names the adapter the weather service (weather/) uses for
+// current conditions at the map centre. There is deliberately NO default: no
+// adapter is implemented yet and no weather source is documented as
+// authorized for this repository, so leaving this unset keeps
+// /api/weather/current answering an honest 501 rather than serving
+// fabricated weather. Unlike SEARCH_PROVIDER and PLACE_PROVIDER, a name
+// alone is not enough: the W1 permission gate
+// (weather/provider-policy.js) additionally requires
+// docs/weather-provider-rights.md to authorize the provider for live data
+// with named evidence. Selection criteria for the eventual provider, in
+// order (the same list lives in the dapp.json WEATHER_PROVIDER description):
+//   1. licensing that permits live use and display with attribution,
+//   2. worldwide point-forecast coverage at the precision the panel shows,
+//   3. cost at this app's scale (a cached, per-point read is tiny),
+//   4. the required credential declarable through the platform Secrets UI,
+//   5. an answer shape an adapter can normalize without guessing.
+// Per the platform secrets convention, the chosen provider's API key is
+// declared in dapp.json in the same change that implements its adapter —
+// never hardcoded here. Like SEARCH_PROVIDER, the value is lower-cased.
+const WEATHER_PROVIDER = (process.env.WEATHER_PROVIDER || '')
+  .trim()
+  .toLowerCase();
+
 // ── AI assistant (Phase 11) ───────────────────────────────────────────────
 // The ONLY AI path is the platform's LLM proxy. Neither value below is a
 // third-party key: the platform injects both in production and injects
@@ -267,6 +302,7 @@ module.exports = {
   OFFLINE_MAX_STORAGE_MB,
   OFFLINE_SEARCH_ENABLED,
   LOCATION_SHARING_ENABLED,
+  TRAFFIC_ENABLED,
   SEARCH_PROVIDER,
   PHOTON_URL,
   PELIAS_URL,
@@ -276,6 +312,7 @@ module.exports = {
   OSRM_PROFILES,
   COMMUNITY_REVIEWERS,
   PLACE_PROVIDER,
+  WEATHER_PROVIDER,
   LLM_PROXY_URL,
   LLM_PROXY_TOKEN,
   LLM_ENABLED,
