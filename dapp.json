@@ -66,6 +66,12 @@
       "default": "true"
     },
     {
+      "key": "LOCATION_SHARING_ENABLED",
+      "description": "Operator switch for location sharing (Phase 12F). Turned on by default. Setting it off makes every /api/sharing route answer the honest not_configured 501 and the screen show its unavailable state; it can never change which code runs or widen what is shared.",
+      "required": false,
+      "default": "true"
+    },
+    {
       "key": "WEATHER_PROVIDER",
       "description": "Which weather provider adapter to use for current conditions at the map centre (Phase 12G). No adapter is implemented yet, and no weather source is documented as authorized for this app, so leaving this unset keeps /api/weather/current answering 501 instead of serving made-up weather. A name alone is not enough either: the W1 gate additionally requires docs/weather-provider-rights.md to authorize the provider for live data with named evidence. Selection criteria, in order: (1) licensing that permits live use and display with attribution, (2) worldwide point coverage at the precision the panel shows, (3) cost at this app's scale, (4) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
       "required": false
@@ -555,6 +561,47 @@
       "path": "/#/discover",
       "expectSelector": "[data-places-search]",
       "expectText": "Find a place"
+    },
+    {
+      "id": "sharing.screen",
+      "name": "Location Sharing screen renders both halves",
+      "path": "/#/sharing",
+      "expectSelector": "[data-sharing-host]",
+      "visual": true,
+      "impact": [
+        "sharing/**",
+        "public/js/screens/sharing.js",
+        "public/js/services/sharing.js",
+        "public/js/services/sharing-core.js",
+        "public/js/components/sharing/**",
+        "public/js/screens/profile.js",
+        "public/js/screens/home.js",
+        "public/js/app.js",
+        "public/js/i18n/**",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Profile links to Location Sharing",
+      "path": "/#/profile",
+      "expectText": "Location Sharing"
+    },
+    {
+      "name": "Location Sharing copy in Indonesian",
+      "path": "/#/sharing?lang=id",
+      "expectText": "Berbagi Lokasi"
+    },
+    {
+      "name": "Location Sharing demo renders canned data",
+      "path": "/#/sharing?demo=1",
+      "expectText": "Staging demo"
+    },
+    {
+      "name": "Location sharing feature-off state is honest",
+      "path": "/#/sharing?sharing=unavailable",
+      "expectText": "Location sharing is not available"
     },
     {
       "name": "Home shows the weather control",

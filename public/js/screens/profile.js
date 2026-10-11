@@ -93,6 +93,7 @@ export async function render(ctx) {
     savedCard(),
     tripsCard(),
     offlineAreasCard(),
+    sharingCard(),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
@@ -158,8 +159,29 @@ function offlineAreasCard() {
   ]);
 }
 
-// The Activity card is filled from /api/profile and owns its own loading and
-// error state.
+// Location Sharing — the Phase 12F entry. Same shape as the Trips and
+// Offline Areas cards. #/sharing is deep-linkable like every other
+// sub-screen.
+function sharingCard() {
+  return card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.sharingTitle') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.sharingBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('sharing.open'), {
+        variant: 'secondary',
+        attrs: { dataset: { openSharing: 'true' } },
+        onClick: () => router.navigate('sharing'),
+      }),
+    ]),
+  ]);
+}
+
+// Both Phase 7 cards are filled from ONE request to /api/profile: the
+// activity counts and the saved-place count come from the same read model, so
+// the screen asks once. Each card still owns its own loading and error state.
 function profileCards() {
   const request = apiGet('/api/profile');
   return [activityCard(request)];
