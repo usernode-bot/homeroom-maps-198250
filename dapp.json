@@ -552,7 +552,9 @@
   ],
   "governance": {
     "approvers": "anyone",
-    "approvals": "default"
+    "approvals": {
+      "atLeast": 3
+    }
   },
   "llm": {
     "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",
