@@ -89,7 +89,12 @@ function resolveMapConfig() {
           traffic: false,
           geocoding: false,
           routing: false,
+          // 3D (Phase 12H): an unconfigured map never advertises 3D.
+          pitch: false,
+          buildings: false,
+          terrain: false,
         },
+        threeD: resolveThreeDConfig(),
       },
     };
   }
@@ -118,9 +123,54 @@ function resolveMapConfig() {
         traffic: false,
         geocoding: false,
         routing: false,
+        // 3D (Phase 12H). The camera rides on the configured map itself, so
+        // its only switch is MAP_3D_ENABLED. Terrain additionally requires
+        // BOTH its evidence pieces; the client resolver re-checks the same
+        // rule as a backstop. Buildings stay unadvertised (runtime-detected).
+        pitch: MAP_3D_ENABLED,
+        buildings: false,
+        terrain: Boolean(MAP_3D_TERRAIN_URL && MAP_TERRAIN_ATTRIBUTION),
       },
+      threeD: resolveThreeDConfig(),
       ...(token ? { token } : {}),
     },
+  };
+}
+
+// ── 3D map (Phase 12H) ────────────────────────────────────────────────────
+// The 3D camera and its two optional data capabilities, as independent
+// operator switches. The camera (pitch/bearing) needs no new data source, so
+// it is on with the map itself; terrain needs an operator-supplied DEM tile
+// URL AND the attribution line its data licence requires, and stays off while
+// either piece is missing — fail closed, the same discipline as the offline
+// B2 gate. Buildings are never advertised here: their extrusion layer lives
+// in the hosted basemap style and is detected client-side from the live style
+// instead of claimed by configuration.
+const MAP_3D_ENABLED = !/^(false|0|no|off)$/i.test(
+  String(process.env.MAP_3D_ENABLED || 'true').trim(),
+);
+const MAP_3D_MAX_PITCH = clampMaxPitch(process.env.MAP_3D_MAX_PITCH || '60');
+const MAP_3D_TERRAIN_URL = (process.env.MAP_3D_TERRAIN_URL || '').trim();
+const MAP_TERRAIN_ATTRIBUTION = (process.env.MAP_TERRAIN_ATTRIBUTION || '').trim();
+
+// Clamp the configured max camera pitch into [0, 85]. A missing or malformed
+// value falls back to MapLibre's own 60° default rather than unbounding the
+// camera; only an explicit numeric 0 clamps to 0.
+function clampMaxPitch(value) {
+  if (value == null || value === '') return 60;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 60;
+  return Math.min(85, Math.max(0, Math.round(parsed)));
+}
+
+// The public `map.threeD` block: what the client's 3D resolver reads. The raw
+// terrain pieces are printed even when incomplete so the client-side
+// re-check sees the same inputs the server did.
+function resolveThreeDConfig() {
+  return {
+    maxPitch: MAP_3D_MAX_PITCH,
+    terrainUrl: MAP_3D_TERRAIN_URL,
+    terrainAttribution: MAP_TERRAIN_ATTRIBUTION,
   };
 }
 
@@ -243,6 +293,10 @@ module.exports = {
   APP_AUDIENCE,
   PUBLIC_DIR,
   MAP_PROVIDER,
+  MAP_3D_ENABLED,
+  MAP_3D_MAX_PITCH,
+  MAP_3D_TERRAIN_URL,
+  MAP_TERRAIN_ATTRIBUTION,
   resolveMapConfig,
   OFFLINE_ENABLED,
   OFFLINE_MAX_STORAGE_MB,

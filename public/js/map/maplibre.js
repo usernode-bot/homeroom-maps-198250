@@ -16,6 +16,13 @@ import {
 } from './errors.js';
 import { REPORT_TYPES, reportPinImage } from './report-icons.js';
 import { TRAFFIC_JAM_COLOR, TRAFFIC_JAM_CASING_COLOR } from '../services/traffic.js';
+import {
+  clampMaxPitch,
+  clampPitch,
+  styleHasBuildingExtrusions,
+  threeDCameraPatch,
+} from './three-d.js';
+import { TERRAIN_SOURCE_ID, terrainConfigured, terrainSource } from './terrain-layer.js';
 
 // Same-origin, relative to this app. This path is produced by `npm run
 // build:map`, never committed.
@@ -124,6 +131,13 @@ export function createMapLibreAdapter(mapConfig) {
   const styleUrl = mapConfig.styleUrl;
   const styleUrlDark = mapConfig.styleUrlDark || null;
 
+  // Phase 12H: the 3D inputs come from the public config's `map.threeD`
+  // block. `maxPitch` clamps every camera move this adapter makes; terrain is
+  // only real when BOTH the tile template and its attribution line are
+  // configured (terrain-layer.js refuses the rest).
+  const maxPitch = clampMaxPitch(mapConfig.threeD ? mapConfig.threeD.maxPitch : 60);
+  const terrainConfig = terrainConfigured(mapConfig) ? mapConfig.threeD : null;
+
   let map = null;
   let maplibregl = null;
   let destroyed = false;
@@ -137,11 +151,25 @@ export function createMapLibreAdapter(mapConfig) {
   let markerElements = []; // live maplibregl.Marker handles
   let reports = null; // the last setReports() payload, applied when layers exist
   let reportLayersReady = false;
+  // Phase 12H: terrain lives in three states — configured (the DEM source may
+  // exist), on (the renderer is drawing elevation) and failed (the source
+  // errored, so it is torn down and reported rather than retried in a loop).
+  let terrainOn = false;
+  let terrainFailedReported = false;
+  let onTerrainFail = null; // set by mount(): the screen's terrain-failure hook
 
   const capabilities = {
     rotation: true,
     touchGestures: true,
     accuracyCircle: true,
+    // 3D (Phase 12H). Pitch is renderer-native. Buildings are NOT claimed
+    // here: the extrusion layer lives in the hosted basemap style and is
+    // detected from the live style on load and on every style swap. Terrain
+    // is honest about its configuration from the start and flips false when
+    // its source fails.
+    pitch: true,
+    buildings: false,
+    terrain: Boolean(terrainConfig),
   };
 
   function emitError(onState, error) {
@@ -191,10 +219,11 @@ export function createMapLibreAdapter(mapConfig) {
     if (node && node.textContent) onAttribution(node.textContent.trim());
   }
 
-  async function mount(container, { onState, onAttribution } = {}) {
+  async function mount(container, { onState, onAttribution, onTerrainError } = {}) {
     if (destroyed) throw new Error('adapter destroyed');
     maplibregl = await loadRenderer();
     if (destroyed) return;
+    onTerrainFail = typeof onTerrainError === 'function' ? onTerrainError : null;
 
     try {
       map = new maplibregl.Map({
@@ -204,6 +233,9 @@ export function createMapLibreAdapter(mapConfig) {
         zoom: WORLD_ZOOM,
         minZoom: 0,
         maxZoom: 22,
+        // Phase 12H: the configured camera ceiling (default 60, MapLibre's
+        // own) bounds every pitch move, native gestures included.
+        maxPitch,
         attributionControl: true,
         // Rotation, touch gestures and keyboard panning are on by default;
         // they are declared explicitly so the capability flags below are
@@ -223,6 +255,14 @@ export function createMapLibreAdapter(mapConfig) {
     }
 
     map.on('error', (event) => {
+      // Phase 12H: a terrain source failure is NOT the map failing. It is
+      // one optional data source; the map stays usable, so the failure is
+      // reported to the screen's note/toast path and the source is torn down
+      // rather than retried in a loop.
+      if (terrainOn && isTerrainSourceError(event)) {
+        handleTerrainFailure(event);
+        return;
+      }
       // Style/tile request failures after the first successful paint are
       // reported as provider errors; the first failure is the one that
       // decides Home's state, so only report while not yet ready.
@@ -234,6 +274,7 @@ export function createMapLibreAdapter(mapConfig) {
     map.on('load', () => {
       if (destroyed) return;
       ensureAccuracyLayer();
+      detectBuildings();
       if (routes) applyRoutes(routes);
       if (markers) applyMarkers(markers);
       if (reports) applyReports(reports);
@@ -257,6 +298,13 @@ export function createMapLibreAdapter(mapConfig) {
       if (map.isStyleLoaded() && reports) {
         reportLayersReady = false;
         applyReports(reports);
+      }
+      // Phase 12H: the swap also drops the DEM source and terrain state, and
+      // the new style may carry different layers entirely, so buildings are
+      // re-detected and terrain is rebuilt where it was on.
+      if (map.isStyleLoaded()) {
+        detectBuildings();
+        reapplyTerrainAfterStyleSwap();
       }
     });
 
@@ -289,6 +337,84 @@ export function createMapLibreAdapter(mapConfig) {
       paint: { 'line-color': MARKER_COLOR, 'line-opacity': 0.5, 'line-width': 1 },
     });
     accuracySource = true;
+  }
+
+  // ── 3D camera and terrain (Phase 12H) ───────────────────────────────────
+  //
+  // The camera needs no data source, so its methods are unconditional and
+  // every pitch is clamped to the configured max. Terrain is optional data:
+  // the DEM source exists only while a configured pair (tile template +
+  // attribution line) is present, and a failed source is torn down and
+  // reported once rather than retried.
+
+  // Buildings are detected from the LIVE style, never claimed: the extrusion
+  // layer belongs to the externally hosted basemap and can change without
+  // notice, so the flag tracks what the style actually carries right now.
+  function detectBuildings() {
+    if (!map || !map.isStyleLoaded()) return;
+    try {
+      capabilities.buildings = styleHasBuildingExtrusions(map.getStyle());
+    } catch {
+      capabilities.buildings = false;
+    }
+  }
+
+  // MapLibre surfaces tile/source failures as generic error events; the
+  // terrain source is recognised by the event's own sourceId when the
+  // renderer includes it, otherwise by its id in the message.
+  function isTerrainSourceError(event) {
+    if (event && event.sourceId === TERRAIN_SOURCE_ID) return true;
+    const err = (event && event.error) || event;
+    const detail = (err && (err.message || String(err))) || '';
+    return detail.indexOf(TERRAIN_SOURCE_ID) !== -1;
+  }
+
+  function handleTerrainFailure(event) {
+    terrainOn = false;
+    // The capability goes with it: a DEM source that failed once stays
+    // failing, so the screen stops offering the control rather than showing
+    // one that leads to the same error every tap.
+    capabilities.terrain = false;
+    try {
+      if (map) map.setTerrain(null);
+    } catch {
+      /* the map may already be gone */
+    }
+    const err = (event && event.error) || event;
+    if (err && err.message) console.warn('[map] terrain: ' + err.message);
+    // Report once per mount: a failing DEM source keeps erroring while it is
+    // attached, and the screen only needs the first word.
+    if (!terrainFailedReported && onTerrainFail) {
+      terrainFailedReported = true;
+      onTerrainFail();
+    }
+  }
+
+  // Ensure the DEM source exists in the CURRENT style. Returns false (and
+  // reports failure) when it could not be added.
+  function applyTerrainSource() {
+    if (!map || !capabilities.terrain || !map.isStyleLoaded()) return false;
+    try {
+      if (!map.getSource(TERRAIN_SOURCE_ID)) {
+        map.addSource(TERRAIN_SOURCE_ID, terrainSource(terrainConfig));
+      }
+      return true;
+    } catch (err) {
+      handleTerrainFailure({ error: err });
+      return false;
+    }
+  }
+
+  // After a style swap the renderer has dropped both the DEM source and the
+  // terrain binding; rebuild them exactly as they were.
+  function reapplyTerrainAfterStyleSwap() {
+    if (!terrainOn) return;
+    if (!applyTerrainSource()) return;
+    try {
+      map.setTerrain({ source: TERRAIN_SOURCE_ID });
+    } catch (err) {
+      handleTerrainFailure({ error: err });
+    }
   }
 
   // ── route rendering ────────────────────────────────────────────────────
@@ -555,12 +681,68 @@ export function createMapLibreAdapter(mapConfig) {
       if (map) map.zoomOut({ duration: 200 });
     },
 
+    // Phase 12H: the reset also levels the pitch, so "reset north" recovers
+    // the camera fully no matter how it was tilted. Existing callers keep
+    // their behaviour (bearing to 0) and gain the pitch reset for free.
     resetNorth() {
-      if (map) map.easeTo({ bearing: 0, duration: prefersReducedMotion() ? 0 : 300 });
+      if (map)
+        map.easeTo({
+          bearing: 0,
+          pitch: 0,
+          duration: prefersReducedMotion() ? 0 : 300,
+        });
     },
 
     setBearing(bearing) {
       if (map) map.setBearing(bearing);
+    },
+
+    // Phase 12H — the 3D camera. `enabled` eases the pitch up to the 3D view
+    // (never beyond the configured max); disabling levels the camera flat AND
+    // north-up in one move. Reduced motion makes either instant.
+    set3DEnabled(enabled) {
+      if (!map) return;
+      map.easeTo(
+        threeDCameraPatch(Boolean(enabled), {
+          maxPitch,
+          reducedMotion: prefersReducedMotion(),
+        }),
+      );
+    },
+
+    // Set the pitch directly (clamped to [0, maxPitch]). Exposed for a
+    // fine-grained camera control; the toggle uses set3DEnabled.
+    setPitch(pitch) {
+      if (!map) return;
+      map.easeTo({
+        pitch: clampPitch(pitch, maxPitch),
+        duration: prefersReducedMotion() ? 0 : 300,
+      });
+    },
+
+    // `enabled` turns terrain elevation on or off. The DEM source is created
+    // here on first use (terrain ships off; no source is added before it is
+    // asked for) and rebuilt after a style swap. A failing source tears
+    // itself down through handleTerrainFailure rather than retrying.
+    setTerrainEnabled(enabled) {
+      if (!map) return;
+      if (!enabled) {
+        terrainOn = false;
+        try {
+          map.setTerrain(null);
+        } catch {
+          /* the terrain binding may already be gone */
+        }
+        return;
+      }
+      if (!capabilities.terrain) return;
+      if (!applyTerrainSource()) return;
+      try {
+        map.setTerrain({ source: TERRAIN_SOURCE_ID });
+        terrainOn = true;
+      } catch (err) {
+        handleTerrainFailure({ error: err });
+      }
     },
 
     setStyle(nextStyleUrl) {

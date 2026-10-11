@@ -19,7 +19,7 @@ export function isConfigured(mapConfig) {
 // Build a controller for one screen mount. `onState('ready'|'error', err?)`
 // is called as the map settles; `onAttribution(string)` as the renderer's
 // attribution changes.
-export function createMapService(mapConfig, { onState, onAttribution, force = null } = {}) {
+export function createMapService(mapConfig, { onState, onAttribution, onTerrainError, force = null } = {}) {
   let adapter = null;
   let destroyed = false;
   // Remember the config this controller was built from so a retry or a theme
@@ -51,19 +51,37 @@ export function createMapService(mapConfig, { onState, onAttribution, force = nu
     capabilities() {
       const base = adapter
         ? adapter.capabilities
-        : { rotation: false, touchGestures: false, accuracyCircle: false };
+        : {
+            rotation: false,
+            touchGestures: false,
+            accuracyCircle: false,
+            pitch: false,
+            buildings: false,
+            terrain: false,
+          };
       // Phase 12A: the offline download capability rides alongside the
       // renderer's capabilities. It comes from the server config's
       // map.capabilities.offline (the B2 provider gate folded in), and is
       // false whenever the config does not say otherwise — fail closed.
       const offline = Boolean(config && config.capabilities && config.capabilities.offline);
-      return { ...base, offline };
+      // Phase 12H: the 3D switches ride the same way. The config's pitch and
+      // terrain switches NARROW what the renderer reports, never widen it —
+      // an adapter claiming pitch on an unconfigured map still answers false.
+      // Buildings pass through from the renderer alone: they are detected
+      // from the live style, not advertised by configuration.
+      const configCaps = (config && config.capabilities) || {};
+      return {
+        ...base,
+        offline,
+        pitch: Boolean(base.pitch) && Boolean(configCaps.pitch),
+        terrain: Boolean(base.terrain) && Boolean(configCaps.terrain),
+      };
     },
 
     async mount(container) {
       build();
       try {
-        await adapter.mount(container, { onState, onAttribution });
+        await adapter.mount(container, { onState, onAttribution, onTerrainError });
       } catch (err) {
         throw toMapError(err, 'The map could not be mounted.');
       }
@@ -80,6 +98,20 @@ export function createMapService(mapConfig, { onState, onAttribution, force = nu
     },
     resetNorth() {
       adapter && adapter.resetNorth();
+    },
+    // 3D camera + terrain (Phase 12H). Same forwarding contract as above: an
+    // adapter that predates the method is simply skipped, so older renderer
+    // builds stay usable.
+    set3DEnabled(enabled) {
+      if (adapter && typeof adapter.set3DEnabled === 'function') adapter.set3DEnabled(enabled);
+    },
+    setPitch(pitch) {
+      if (adapter && typeof adapter.setPitch === 'function') adapter.setPitch(pitch);
+    },
+    setTerrainEnabled(enabled) {
+      if (adapter && typeof adapter.setTerrainEnabled === 'function') {
+        adapter.setTerrainEnabled(enabled);
+      }
     },
     setStyle(styleUrl) {
       adapter && adapter.setStyle(styleUrl);

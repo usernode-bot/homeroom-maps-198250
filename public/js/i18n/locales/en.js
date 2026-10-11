@@ -72,6 +72,12 @@ export default {
   'map.showing': 'Showing your location.',
   'map.locateFailed': 'We could not determine your location right now. Please try again.',
 
+  // 3D map (Phase 12H)
+  'map.3dTitle': '3D view',
+  'map.terrainTitle': 'Terrain',
+  'map.terrainSr': 'Show terrain elevation',
+  'map.terrainFailed': 'Terrain could not load. The map still works without it.',
+
   // home
   'home.placesTitle': 'Places',
   'home.placesBody': 'Points of interest, map contributions and saved places live in Discover and Profile.',

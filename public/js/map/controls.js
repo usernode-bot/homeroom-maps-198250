@@ -8,6 +8,7 @@
 import { el } from '../components/dom.js';
 import { mapIcon } from './icons.js';
 import { t } from '../i18n/index.js';
+import { threeDToggle, terrainToggle } from './controls-3d.js';
 
 const BUTTON_CLASS =
   'un-touch-target flex h-11 w-11 items-center justify-center rounded-pill border border-line bg-surface text-ink shadow-sm transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-60';
@@ -29,7 +30,21 @@ function iconButton({ icon, label, onClick }) {
 
 // Build the control column. Returns the element; handlers are wired by the
 // caller through the callbacks so this stays a pure view.
-export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, onMyLocation, myLocationOn }) {
+//
+// Phase 12H: `threeD` and `terrain` are optional `{ on, onToggle }` slots.
+// The caller passes them ONLY when the capability says the control may
+// exist, so an unavailable capability leaves no control behind at all —
+// there is never a dead button in the column.
+export function mapControls({
+  capabilities,
+  onZoomIn,
+  onZoomOut,
+  onResetNorth,
+  onMyLocation,
+  myLocationOn,
+  threeD = null,
+  terrain = null,
+}) {
   const nodes = [
     buttonWithHandler(iconButton({ icon: 'plus', label: t('map.zoomIn') }), onZoomIn),
     buttonWithHandler(iconButton({ icon: 'minus', label: t('map.zoomOut') }), onZoomOut),
@@ -41,6 +56,11 @@ export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, o
         onResetNorth,
       ),
     );
+  }
+  // The 3D camera toggle sits with the other camera controls, above My
+  // location.
+  if (capabilities.pitch && threeD) {
+    nodes.push(threeDToggle({ on: threeD.on, onToggle: threeD.onToggle }));
   }
   nodes.push(
     el(
@@ -56,6 +76,11 @@ export function mapControls({ capabilities, onZoomIn, onZoomOut, onResetNorth, o
       [mapIcon('locate', { class: 'h-5 w-5' }), el('span', { text: t('map.myLocation') })],
     ),
   );
+  // The Terrain toggle sits with the view controls; it only exists when a
+  // terrain source is configured (the caller passes the slot only then).
+  if (capabilities.terrain && terrain) {
+    nodes.push(terrainToggle({ on: terrain.on, onToggle: terrain.onToggle }));
+  }
   // Map layers is deliberately disabled and labelled: it is a placeholder for
   // a later phase, not a broken control.
   nodes.push(

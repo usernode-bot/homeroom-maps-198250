@@ -22,6 +22,7 @@ import { createMapService } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
 import { mapControls } from '../map/controls.js';
+import { setPressed } from '../map/controls-3d.js';
 import { createSearchSession, setOfflineSearchCenter, bootQuery } from '../services/search.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
@@ -33,12 +34,23 @@ import { addItem as addTripItem } from '../services/trips.js';
 import { getState } from '../state.js';
 import { t } from '../i18n/index.js';
 import { formatDistance } from '../i18n/format.js';
+import { readPref, writePref } from '../i18n/prefs.js';
 
 const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
+
+// The 3D camera preference (Phase 12H): device-local like the theme, guarded
+// by the shared prefs helper. Only 'on' and 'off' are ever stored, and the
+// default is off, so the map always opens level until the person asks for 3D.
+const MAP_3D_PREF = 'hm-map-3d';
 
 // The live map for the screen currently mounted. Torn down on the next render
 // so a navigation never leaves a WebGL context or tile poller behind.
 let activeService = null;
+// The 3D toggles' live state for the mounted screen; reset per render from
+// the preference (3D) or its default (terrain, which is never persisted —
+// it exists only while an operator configures a source).
+let map3dOn = false;
+let mapTerrainOn = false;
 
 // PLACEHOLDER(map-phase): the map adapter exists now, but centering it on a
 // selected search result and dropping a marker aren't wired yet — this hook
@@ -55,6 +67,10 @@ export async function render(ctx) {
 
   const mapConfig = (getState().config && getState().config.map) || null;
   const force = demoState();
+  // Fresh screen: the 3D camera state restarts from the stored preference,
+  // and terrain restarts off (it is not persisted).
+  map3dOn = readPref(MAP_3D_PREF, ['on', 'off'], 'off') === 'on';
+  mapTerrainOn = false;
 
   const session = createSearchSession({ onSelect: focusSelectedPlace });
 
@@ -217,7 +233,16 @@ export async function render(ctx) {
         styleUrl: null,
         styleUrlDark: null,
         attribution: DEFAULT_ATTRIBUTION,
-        capabilities: { rotation: false, touchGestures: false, accuracyCircle: false, offline: false },
+        capabilities: {
+          rotation: false,
+          touchGestures: false,
+          accuracyCircle: false,
+          offline: false,
+          pitch: false,
+          buildings: false,
+          terrain: false,
+        },
+        threeD: { maxPitch: 60, terrainUrl: '', terrainAttribution: '' },
       };
 
   // The app's own attribution strip is rendered up front from config, so it is
@@ -248,6 +273,10 @@ function mountMap(view, config, force = null) {
   showOverlay(view, loading({ label: t('map.loading') }));
   const service = createMapService(config, {
     force,
+    onTerrainError: () => {
+      if (activeService !== service) return;
+      onTerrainFailed(view);
+    },
     onState: (state, err) => {
       if (activeService !== service) return;
       if (state === 'ready') onReady(service, view);
@@ -264,6 +293,11 @@ function onReady(service, view) {
   hideOverlay(view);
   view.controls.replaceChildren(liveControls(service, view));
   view.viewRef.service = service;
+  // A stored 3D preference applies once the map is ready to take camera
+  // moves; the toggle already rendered in its pressed state.
+  if (map3dOn && service.capabilities().pitch) {
+    service.set3DEnabled(true);
+  }
   // Offline search picks the region covering the map center when the renderer
   // exposes one; the keyless adapter may not, in which case the service falls
   // back to the most recently completed region. Either way nothing is guessed.
@@ -351,16 +385,50 @@ function hideOverlay(view) {
 }
 
 function liveControls(service, view) {
+  const capabilities = service.capabilities();
   const column = mapControls({
-    capabilities: service.capabilities(),
+    capabilities,
     myLocationOn: false,
     onZoomIn: () => service.zoomIn(),
     onZoomOut: () => service.zoomOut(),
     onResetNorth: () => service.resetNorth(),
     onMyLocation: () => requestLocation(service, view),
+    // The 3D slots are passed only when the capability says the control may
+    // exist; an unavailable capability leaves no control behind (Phase 12H).
+    threeD: capabilities.pitch
+      ? { on: map3dOn, onToggle: (next) => setThreeD(service, view, next) }
+      : null,
+    terrain: capabilities.terrain
+      ? { on: mapTerrainOn, onToggle: (next) => setTerrain(service, view, next) }
+      : null,
   });
   column.classList.add('pointer-events-auto');
   return column;
+}
+
+// ── 3D camera and terrain toggles (Phase 12H) ────────────────────────────
+
+function setThreeD(service, view, next) {
+  map3dOn = Boolean(next);
+  writePref(MAP_3D_PREF, map3dOn ? 'on' : 'off');
+  service.set3DEnabled(map3dOn);
+  setPressed(view.controls.querySelector('[data-map-control="3d"]'), map3dOn);
+}
+
+function setTerrain(service, view, next) {
+  mapTerrainOn = Boolean(next);
+  service.setTerrainEnabled(mapTerrainOn);
+  setPressed(view.controls.querySelector('[data-map-control="terrain"]'), mapTerrainOn);
+}
+
+// A terrain source that failed is torn down by the adapter; the capability
+// went with it, so the screen only has to say so and reset the toggle.
+function onTerrainFailed(view) {
+  mapTerrainOn = false;
+  setPressed(view.controls.querySelector('[data-map-control="terrain"]'), false);
+  const message = t('map.terrainFailed');
+  showNote(view, message);
+  toast(message, { error: true });
 }
 
 function disabledControls() {
