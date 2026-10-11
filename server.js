@@ -24,6 +24,8 @@ const places = require('./places');
 // The routes below need the bound service (createPlaceService), not the
 // module itself — the module only exports the factory and the pure helpers.
 const placesApi = places.createPlaceService();
+const weatherApi = require('./weather');
+const { resolveWeatherConfig } = require('./weather/server-config');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
 const { createStore: createTripStore } = require('./trips/store');
@@ -34,6 +36,8 @@ const { createProfiles } = require('./saved/profiles');
 const { createAnthropicProxy } = require('./assistant/provider');
 const { createAssistantRouter } = require('./assistant/routes');
 const { resolveOfflineConfig } = require('./offline');
+const { resolveOfflineSearchConfig } = require('./offline/search-config');
+const { resolveTrafficConfig } = require('./traffic');
 
 const app = express();
 const port = PORT;
@@ -204,19 +208,43 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // OpenFreeMap — `offline.downloads.enabled` is false, `blocker` names B2,
 // and no presets are offered. map.capabilities.offline and features.offline
 // mirror that same effective value, so every surface reads one truth.
+// The `weather` block (Phase 12G) is the same signal for current conditions
+// at the map centre. With no weather adapter implemented and none
+// authorized under the W1 gate, it always reads
+//   { configured: false, provider: null, blocker: 'W1', reason: ... }
+// and the client renders the honest "Weather unavailable" state. The
+// features.weather flag mirrors it, so every surface reads one truth.
+// The `traffic` block (Phase 12D) reports the live-traffic capability
+// resolved by traffic/index.js: while the live-traffic permission gate (T1)
+// is closed — no provider is chosen, no terms accepted, no rights documented
+// — `traffic.enabled` is false, `blocker` names T1, and no adapter exists.
+// map.capabilities.traffic and features.traffic mirror that same effective
+// value, so every surface reads one truth.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   const routing = routingApi.resolveRoutingConfig();
   const offline = resolveOfflineConfig();
+  // Phase 12B extends the offline block with the search capability. This is
+  // an operator switch only and does not depend on the B2 download gate:
+  // searching already-stored regions is a device-local read. map.capabilities
+  // .offline and features.offline keep their Phase 12A values untouched.
+  const offlineSearch = resolveOfflineSearchConfig();
+  const weather = resolveWeatherConfig();
+  const traffic = resolveTrafficConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
     mapProvider,
-    map: { ...map, capabilities: { ...map.capabilities, offline: offline.offline } },
+    map: {
+      ...map,
+      capabilities: { ...map.capabilities, offline: offline.offline, traffic: traffic.enabled },
+    },
     searchProvider: searchApi.activeProviderName(),
     routing,
     placeProvider: placesApi.activeProviderName(),
-    offline,
+    offline: { ...offline, search: offlineSearch },
+    weather,
+    traffic,
     features: {
       map: Boolean(map.configured),
       search: true,
@@ -224,8 +252,9 @@ app.get('/api/config', (_req, res) => {
       communityVoting: true,
       savedPlaces: true,
       ai: Boolean(LLM_ENABLED),
-      traffic: false,
+      traffic: traffic.enabled,
       offline: offline.offline,
+      weather: Boolean(weather.configured),
     },
   });
 });
@@ -406,6 +435,47 @@ app.get('/api/places/:id', (req, res) =>
 // stub list this block used to keep is empty. A request to an unknown /api/*
 // path falls through to the JSON 404 below, never to the HTML shell.
 
+// Weather — the one read route of the weather service (weather/index.js).
+// GET under /api/, so the auth gate above covers it; a provider key never
+// leaves the server. The typed error codes from weather/provider.js map to
+// HTTP statuses here and use the app's standard JSON error shape, so the
+// client's apiGet() turns them into typed ApiErrors for free. With no
+// weather adapter implemented and none authorized under the W1 gate, every
+// call answers an honest 501 (not_configured) rather than fabricated
+// weather. `timeout` gets its own 504 deliberately: weather is
+// time-sensitive, so "no answer in time" is its own state in the panel.
+const WEATHER_ERROR_STATUS = {
+  invalid_request: 400,
+  not_configured: 501,
+  rate_limited: 429,
+  timeout: 504,
+};
+
+app.get('/api/weather/current', async (req, res) => {
+  try {
+    // Language resolution order, same as search and places: explicit query
+    // param, then the signed-in user's platform locale (JWT claim), then
+    // Accept-Language, then omit and let the provider default.
+    const lang =
+      req.query.lang ||
+      (req.user && req.user.locale) ||
+      firstAcceptLanguage(req.headers['accept-language']) ||
+      null;
+    const out = await weatherApi.run({
+      lat: req.query.lat,
+      lng: req.query.lng,
+      lang,
+    });
+    res.json(out);
+  } catch (err) {
+    const code = err && err.code ? err.code : 'provider_error';
+    console.warn(`[weather] ${code}: ` + (err && err.message));
+    res.status(WEATHER_ERROR_STATUS[code] || 502).json({
+      error: { code, message: (err && err.message) || 'The weather lookup failed.' },
+    });
+  }
+});
+
 // AI assistant (Phase 11) — /api/assistant/turn, /act and /status. All three
 // sit behind the auth gate above (none is added to PUBLIC_API_PATHS). `act`
 // validates and normalizes one action and mutates no domain data; every write
@@ -421,6 +491,16 @@ app.use(
     spendState: assistantSpend,
   }),
 );
+
+// The staging-only demo fixture behind Phase 12B's offline search seed. It is
+// a tiny MVT test asset, served by its exact path and only on staging; on any
+// other environment the path is not routed at all.
+if (IS_STAGING) {
+  app.get('/tests/fixtures/offline-search-place.mvt', (_req, res) => {
+    res.type('application/vnd.mapbox-vector-tile');
+    res.sendFile(path.join(__dirname, 'tests/fixtures/offline-search-place.mvt'));
+  });
+}
 
 app.use(express.static(PUBLIC_DIR));
 

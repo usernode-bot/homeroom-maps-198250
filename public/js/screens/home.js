@@ -18,19 +18,22 @@ import { button } from '../components/button.js';
 import { errorState } from '../components/error-state.js';
 import { loading } from '../components/loading.js';
 import { placeholderPanel } from '../components/placeholder-panel.js';
-import { createMapService } from '../services/map.js';
+import { createMapService, trafficPanelState } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
 import { mapControls } from '../map/controls.js';
-import { createSearchSession } from '../services/search.js';
+import { createSearchSession, setOfflineSearchCenter, bootQuery } from '../services/search.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 import { createAssistantPanel } from '../components/assistant/panel.js';
+import { createWeatherPanel } from '../components/weather/weather-panel.js';
+import { setWeatherCapability, requestWeather } from '../services/weather.js';
 import { present } from '../components/surface.js';
 import { createAssistant, mapContext, fetchStatus, normalizeAction } from '../services/assistant.js';
 import { savedPlaces } from '../services/saved-places.js';
 import { addItem as addTripItem } from '../services/trips.js';
-import { getState } from '../state.js';
+import { fetchConfig } from '../api.js';
+import { getState, setState } from '../state.js';
 import { t } from '../i18n/index.js';
 import { formatDistance } from '../i18n/format.js';
 
@@ -39,6 +42,10 @@ const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
 // The live map for the screen currently mounted. Torn down on the next render
 // so a navigation never leaves a WebGL context or tile poller behind.
 let activeService = null;
+
+// The open traffic sheet's dismiss handle, so a second tap (or a deep link
+// plus a tap) never stacks a second panel over the map.
+let trafficSheet = null;
 
 // PLACEHOLDER(map-phase): the map adapter exists now, but centering it on a
 // selected search result and dropping a marker aren't wired yet — this hook
@@ -50,6 +57,8 @@ export async function render(ctx) {
     activeService.destroy();
     activeService = null;
   }
+  // A fresh screen: the previous screen's map center no longer applies.
+  setOfflineSearchCenter(null);
 
   const mapConfig = (getState().config && getState().config.map) || null;
   const force = demoState();
@@ -197,6 +206,20 @@ export async function render(ctx) {
 
   sync(session.getState());
 
+  // A `?q=` deep link runs one committed query at boot, so a URL reaches the
+  // results (and offline-results) state without a click. It only ever feeds a
+  // query string into the same session the input drives.
+  const initialQuery = bootQuery();
+  if (initialQuery) {
+    session.input(initialQuery);
+    session.commit();
+  }
+
+  // A `?traffic=open` deep link boots straight into the traffic panel, so a
+  // screenshot or check reaches the honest not-connected state without an
+  // interaction — the same affordance the assistant deep link uses.
+  if (trafficParam() === 'open') setTimeout(() => openTrafficPanel(), 0);
+
   const config = mapConfig && mapConfig.configured
     ? mapConfig
     : {
@@ -222,6 +245,11 @@ export async function render(ctx) {
     showMessage(view, 'unconfigured');
     return;
   }
+
+  // A `?weather=open` deep link boots straight into the weather panel, the
+  // same way ?assistant= reaches the assistant sheet. The forced states have
+  // no live map, so they have no weather surface either.
+  if (!force && weatherParam() === 'open') setTimeout(() => openWeatherPanel(viewRef), 0);
 
   mountMap(view, config, force === 'unsupported' ? 'unsupported' : null);
 }
@@ -253,6 +281,16 @@ function onReady(service, view) {
   hideOverlay(view);
   view.controls.replaceChildren(liveControls(service, view));
   view.viewRef.service = service;
+  // Offline search picks the region covering the map center when the renderer
+  // exposes one; the keyless adapter may not, in which case the service falls
+  // back to the most recently completed region. Either way nothing is guessed.
+  if (service && typeof service.getCenter === 'function') {
+    try {
+      setOfflineSearchCenter(service.getCenter());
+    } catch {
+      setOfflineSearchCenter(null);
+    }
+  }
 }
 
 function onFailure(service, view, err) {
@@ -337,9 +375,95 @@ function liveControls(service, view) {
     onZoomOut: () => service.zoomOut(),
     onResetNorth: () => service.resetNorth(),
     onMyLocation: () => requestLocation(service, view),
+    onWeather: () => openWeatherPanel(view.viewRef),
+    onTraffic: () => openTrafficPanel(),
   });
   column.classList.add('pointer-events-auto');
   return column;
+}
+
+// ── live traffic panel (Phase 12D) ───────────────────────────────────────
+
+// The honest answer to "does this map show live traffic?". The panel reads
+// only the app's own config snapshot and the i18n layer — it contacts no
+// provider, because none is connected (the T1 gate is closed), and the copy
+// it renders comes from trafficPanelState(), which can only ever name i18n
+// keys. Community reports are named as what they are; they are never
+// presented as verified live traffic.
+function openTrafficPanel() {
+  if (trafficSheet) return;
+  const body = el('div', { class: 'flex flex-col gap-3' }, []);
+
+  const renderNotice = async ({ fetchFailed = false } = {}) => {
+    // "Check again" re-reads the app's configuration — never a provider: the
+    // gate is document-driven, so the honest state can only change through
+    // config, the same way the B2 tile gate works. A failed fetch is the
+    // offline line, not a spinner and not a guess.
+    if (!fetchFailed) {
+      try {
+        const fresh = await fetchConfig();
+        setState({ config: fresh });
+      } catch {
+        renderNotice({ fetchFailed: true });
+        return;
+      }
+    }
+    const config = getState().config || {};
+    const online = navigator.onLine !== false && !fetchFailed;
+    const state = trafficPanelState(config.traffic, { online });
+    const notice = el(
+      'div',
+      {
+        class: 'rounded-card border border-line bg-surface px-4 py-4',
+        dataset: { trafficPanel: 'true' },
+      },
+      [
+        el('p', { class: 'text-sm font-semibold text-ink', text: t('traffic.panelTitle') }),
+        ...state.lines.map((key) =>
+          el('p', { class: 'mt-1 text-sm text-muted leading-relaxed', text: t(key) }),
+        ),
+        // Unreachable while the provider registry is empty; a future
+        // authorized provider change replaces this panel with the connected
+        // states. Naming the provider is attribution, not a data claim.
+        state.enabled && config.traffic && config.traffic.provider
+          ? el('p', { class: 'mt-1 text-xs text-muted', text: config.traffic.provider })
+          : null,
+        el('div', { class: 'mt-3' }, [
+          button(t('traffic.checkAgain'), {
+            variant: 'secondary',
+            attrs: { 'data-traffic-check': 'true' },
+            onClick: () => renderNotice(),
+          }),
+        ]),
+      ].filter(Boolean),
+    );
+    body.replaceChildren(notice);
+  };
+
+  renderNotice().catch((err) => console.warn('[traffic] panel render failed: ' + ((err && err.message) || err)));
+  trafficSheet = present(body, {
+    label: t('traffic.panelTitle'),
+    onDismiss: () => {
+      trafficSheet = null;
+    },
+  });
+}
+
+// The traffic deep-link value ('open'), read from the URL query or the query
+// after the hash, exactly like demoState reads ?map=.
+function trafficParam() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('traffic');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('traffic');
+    }
+  } catch {
+    /* no URL, no traffic state */
+  }
+  return value === 'open' ? 'open' : null;
 }
 
 function disabledControls() {
@@ -577,6 +701,49 @@ function navigateForAssistant(nav, viewRef) {
   }
 }
 
+// ── weather (Phase 12G) ──────────────────────────────────────────────────
+
+// The Weather control opens the panel over the map and asks the shared
+// weather session for current conditions at the map centre. The session
+// decides whether a request may happen at all: with no authorized provider
+// (the W1 gate, the shipped state) it fetches nothing and the panel renders
+// the honest "Weather unavailable" state.
+// One panel at a time, like the assistant sheet's `opened` guard: a deep
+// link re-firing on a re-render must not stack a second surface over an
+// open one.
+let weatherPanelOpened = false;
+
+function openWeatherPanel(viewRef) {
+  if (weatherPanelOpened) return;
+  const config = getState().config || {};
+  setWeatherCapability(config.weather || null);
+  let surface = null;
+  const panel = createWeatherPanel({ onClose: () => surface && surface.dismiss() });
+  const body = el('div', { class: 'flex flex-col gap-3' }, [panel.root]);
+  surface = present(body, {
+    label: t('weather.title'),
+    onDismiss: () => {
+      weatherPanelOpened = false;
+      panel.destroy();
+    },
+  });
+  weatherPanelOpened = true;
+  // The centre comes from the live adapter when it exposes one (the map
+  // files are not touched by this phase, and today's adapter does not); with
+  // none, the session records that no honest centre exists and — with the
+  // capability unavailable, as it ships — nothing is fetched either way.
+  const service = viewRef && viewRef.service;
+  let center = null;
+  if (service && typeof service.getCenter === 'function') {
+    try {
+      center = service.getCenter();
+    } catch {
+      center = null;
+    }
+  }
+  requestWeather(center);
+}
+
 function assistantMount(searchSession, viewRef) {
   // Deep-link state for the assistant surface, read like demoState (both the
   // URL query and the query after the hash). `demo` is the staging-only
@@ -694,6 +861,23 @@ function assistantParam() {
   // enforced by the caller) opens the read-only assistant transcript.
   if (value === 'demo' || demo === '1') return 'demo';
   return null;
+}
+
+// The weather deep link ('open'), read like assistantParam reads the
+// assistant's: from the URL query or the query after the hash.
+function weatherParam() {
+  try {
+    let value = new URLSearchParams(window.location.search).get('weather');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('weather');
+    }
+    return value === 'open' ? 'open' : null;
+  } catch {
+    /* no URL, no weather state */
+    return null;
+  }
 }
 
 // The state lives in the query string, but this app hash-routes, so the

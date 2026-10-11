@@ -3,7 +3,7 @@
   "description": "A global map and location platform built together with its community.",
   "icon": {
     "image": "brand/icon.png",
-    "emoji": "\ud83d\uddfa\ufe0f"
+    "emoji": "🗺️"
   },
   "secrets": [
     {
@@ -58,6 +58,23 @@
       "description": "Per-device storage budget for offline map areas, in megabytes. The Offline Areas screen reports actual usage against this budget.",
       "required": false,
       "default": "2048"
+    },
+    {
+      "key": "OFFLINE_SEARCH_ENABLED",
+      "description": "Operator switch for offline search (Phase 12B). Turned on by default. It is independent of the offline-download gate: searching regions a device has already stored is a device-local read, so it still works while tile downloads are closed. Setting it off makes the offline search states honest; online search is unaffected.",
+      "required": false,
+      "default": "true"
+    },
+    {
+      "key": "WEATHER_PROVIDER",
+      "description": "Which weather provider adapter to use for current conditions at the map centre (Phase 12G). No adapter is implemented yet, and no weather source is documented as authorized for this app, so leaving this unset keeps /api/weather/current answering 501 instead of serving made-up weather. A name alone is not enough either: the W1 gate additionally requires docs/weather-provider-rights.md to authorize the provider for live data with named evidence. Selection criteria, in order: (1) licensing that permits live use and display with attribution, (2) worldwide point coverage at the precision the panel shows, (3) cost at this app's scale, (4) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
+      "required": false
+    },
+    {
+      "key": "TRAFFIC_ENABLED",
+      "description": "Operator switch for the live traffic layer (Phase 12D). Can only narrow the live-traffic permission gate (T1), never widen it: while the repository documents no traffic-provider rights (docs/traffic-provider-rights.md does not exist) and no traffic adapter is implemented, live traffic stays honestly unavailable no matter how this is set. No traffic API key is declared here; the chosen provider's key gets declared in the same change that implements its adapter, per the platform secrets convention.",
+      "required": false,
+      "default": "true"
     }
   ],
   "visibility": {
@@ -93,6 +110,22 @@
       "name": "Home map not-configured state",
       "path": "/#/?map=unconfigured",
       "expectText": "Map is not configured yet"
+    },
+    {
+      "name": "Home shows the Traffic control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"traffic\"]"
+    },
+    {
+      "name": "Traffic panel shows the honest not-connected state",
+      "path": "/#/?traffic=open",
+      "expectSelector": "[data-traffic-panel]",
+      "expectText": "Live traffic is not connected yet"
+    },
+    {
+      "name": "Traffic panel copy in Indonesian",
+      "path": "/#/?traffic=open&lang=id",
+      "expectText": "Lalu lintas langsung belum tersambung"
     },
     {
       "name": "Search bar renders on Home",
@@ -135,6 +168,8 @@
         "public/js/**",
         "public/js/screens/directions.js",
         "public/js/services/routing*.js",
+        "public/js/services/traffic*.js",
+        "public/js/services/community.js",
         "public/js/components/route-summary.js",
         "routing/**",
         "styles/**",
@@ -143,6 +178,11 @@
         "package.json"
       ],
       "allowConsoleErrors": true
+    },
+    {
+      "name": "Directions renders the traffic legend element",
+      "path": "/#/directions",
+      "expectSelector": "[data-traffic-legend]"
     },
     {
       "name": "Directions destination prefills from a place link",
@@ -473,6 +513,79 @@
       ],
       "allowConsoleErrors": true,
       "expectText": "Save Staging demo cafe to favorites"
+    },
+    {
+      "id": "offline.search",
+      "name": "Offline search returns downloaded places marked Offline",
+      "path": "/#/?seed=1&offline=1&q=Staging%20demo%20place",
+      "expectSelector": "[data-offline-badge]",
+      "expectText": "Offline search covers only Staging demo area, a downloaded area on this device.",
+      "visual": true,
+      "impact": [
+        "public/js/services/offline-search*.js",
+        "public/js/services/search.js",
+        "public/js/services/places-model.js",
+        "public/js/components/search/**",
+        "public/js/components/place/**",
+        "public/js/screens/home.js",
+        "public/js/screens/discover.js",
+        "public/js/app.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "offline/search-config.js",
+        "tests/fixtures/offline-search-place.mvt",
+        "server.js",
+        "config.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Offline search with no downloaded areas is the honest empty state",
+      "path": "/#/?offline=1&q=Staging%20demo%20place",
+      "expectSelector": "[data-offline-unavailable=\"no_regions\"]",
+      "expectText": "No offline areas on this device"
+    },
+    {
+      "name": "Offline search copy in Indonesian",
+      "path": "/#/?seed=1&offline=1&q=Staging%20demo%20place&lang=id",
+      "expectText": "Pencarian offline hanya mencakup Staging demo area"
+    },
+    {
+      "name": "Online search path is unchanged and shows no Offline badge",
+      "path": "/#/discover",
+      "expectSelector": "[data-places-search]",
+      "expectText": "Find a place"
+    },
+    {
+      "name": "Home shows the weather control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"weather\"]"
+    },
+    {
+      "id": "weather.panel",
+      "name": "Weather panel reports the honest unavailable state",
+      "path": "/#/?weather=open",
+      "expectSelector": "[data-weather-panel][data-weather-state=\"unavailable\"]",
+      "expectText": "Weather unavailable",
+      "visual": true,
+      "impact": [
+        "weather/**",
+        "public/js/services/weather*.js",
+        "public/js/components/weather/**",
+        "public/js/map/controls.js",
+        "public/js/map/icons.js",
+        "public/js/screens/home.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Weather panel copy in Indonesian",
+      "path": "/#/?weather=open&lang=id",
+      "expectText": "Cuaca tidak tersedia"
     }
   ],
   "permissions": [
@@ -483,9 +596,7 @@
   ],
   "governance": {
     "approvers": "anyone",
-    "approvals": {
-      "atLeast": 1
-    }
+    "approvals": "default"
   },
   "llm": {
     "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",

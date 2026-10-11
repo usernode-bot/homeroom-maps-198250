@@ -22,6 +22,9 @@ import * as offlineAreas from './screens/offline-areas.js';
 import { resolveOfflineCapability } from './services/offline-capability.js';
 import { syncRegistration, announceAllowedHosts } from './services/offline-registration.js';
 import { allowedHostsFor } from './services/offline-cache-policy.js';
+import { seedUrlOverride } from './services/search.js';
+import { seedOfflineSearchDemo, shouldSeedOfflineSearchDemo } from './services/offline-search-demo.js';
+import { createTileStore } from './services/offline-tiles.js';
 
 router.register('home', home);
 router.register('discover', discover);
@@ -62,6 +65,19 @@ async function loadMeta() {
     const config = await fetchConfig();
     setState({ config });
     syncOfflineRegistration(config);
+    // Phase 12B: on staging only, `?seed=1` seeds one synthetic region plus
+    // the committed fixture tile into the device-local store, so the offline
+    // result UI is reachable on a preview. It is idempotent, device-local
+    // only, and a no-op everywhere else and without the flag. `?offline=1`
+    // forces the offline path on its own (without seeding), so a plain route
+    // asserts the honest empty state. Best-effort: a failure never breaks boot.
+    if (shouldSeedOfflineSearchDemo({ seed: seedUrlOverride() === true, environment: config.environment })) {
+      try {
+        await seedOfflineSearchDemo({ store: createTileStore({}) });
+      } catch (err) {
+        console.warn('[offline-search] staging demo seed skipped: ' + ((err && err.message) || err));
+      }
+    }
     // Only ask who is signed in when the shell actually gave us a token.
     // Without one the server is right to answer 401, and a request that is
     // expected to fail is noise, not a real error.

@@ -227,6 +227,13 @@ export function placeFromSearchResult(result, { reference } = {}) {
       typeof result.provider === 'string' && result.provider
         ? result.provider
         : 'unknown',
+    // Phase 12B: an offline result carries its own marks so the card can never
+    // present device-local data as a live result. Absent on online results.
+    offline: Boolean(result.offline),
+    regionName:
+      typeof result.regionName === 'string' && result.regionName ? result.regionName : null,
+    attribution:
+      typeof result.attribution === 'string' && result.attribution ? result.attribution : null,
   };
   if (reference && coordinates) {
     const km = distanceKm(reference.lat, reference.lon, coordinates.lat, coordinates.lon);
@@ -265,6 +272,9 @@ export function mergePlace(summary, details) {
     businessStatus: pick(base.businessStatus, details.businessStatus),
     verificationStatus: pick(base.verificationStatus, details.verificationStatus),
     dataSource: pick(base.dataSource, details.dataSource) || 'unknown',
+    offline: Boolean(base.offline || details.offline),
+    regionName: pick(base.regionName, details.regionName),
+    attribution: pick(base.attribution, details.attribution),
   };
   if (Number.isFinite(base.distanceKm)) merged.distanceKm = base.distanceKm;
   return merged;

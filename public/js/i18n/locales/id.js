@@ -464,6 +464,34 @@ export default {
   'reports.placeRef': 'Tempat',
   'reports.myReportNote': 'Anda melaporkan ini. Orang lain dapat mengonfirmasi atau tidak setuju.',
 
+  // legenda lalu lintas di Rute (permintaan #26) — kondisi rute dari umpan
+  // laporan komunitas
+  'traffic.legendTitle': 'Kondisi lalu lintas',
+  'traffic.legendJam': 'Laporan macet',
+  'traffic.legendFlowing': 'Tidak ada laporan macet',
+  'traffic.legendSource': 'Dari laporan komunitas',
+
+  // lalu lintas langsung (Fase 12D) — panel jujur saat belum ada penyedia
+  // (gerbang izin T1 masih tertutup). Kunci state.* disiapkan untuk perubahan
+  // penyedia di masa depan; hari ini tidak ada yang bisa mencapainya.
+  'traffic.control': 'Lalu lintas',
+  'traffic.panelTitle': 'Lalu lintas langsung',
+  'traffic.panelUnavailable':
+    'Lalu lintas langsung belum tersambung. Belum ada penyedia lalu lintas, jadi tidak ada lapisan lalu lintas dan tidak ada warna lalu lintas di peta.',
+  'traffic.panelCommunity':
+    'Kondisi jalan yang terlihat hari ini berasal dari laporan komunitas. Laporan itu muncul sebagai pin di peta dan pada rute di Rute.',
+  'traffic.panelRights':
+    'Hak data lalu lintas belum didokumentasikan. Nanti, nama dan atribusi penyedia akan muncul di sini.',
+  'traffic.checkAgain': 'Periksa lagi',
+  'traffic.state.offline': 'Anda sedang luring. Lalu lintas langsung butuh koneksi.',
+  'traffic.state.loading': 'Memeriksa lalu lintas langsung…',
+  'traffic.state.stale': 'Data lalu lintas dari {time} dan mungkin sudah tidak akurat.',
+  'traffic.state.noCoverage': 'Tidak ada data lalu lintas langsung untuk area ini.',
+  'traffic.state.outage': 'Penyedia lalu lintas sedang tidak menjawab.',
+  'traffic.state.rateLimited': 'Penyedia lalu lintas sedang membatasi permintaan. Coba lagi nanti.',
+  'traffic.state.timeout': 'Penyedia lalu lintas butuh terlalu lama untuk menjawab.',
+  'traffic.state.authFailed': 'Penyedia lalu lintas menolak kredensial aplikasi ini.',
+
   // assistant (Phase 11) — lembar asisten peta AI
   'assistant.title': 'Tanya tentang peta',
   'assistant.open': 'Tanya tentang peta',
@@ -541,7 +569,57 @@ export default {
     'Perangkat kehabisan ruang sebelum unduhan selesai. Kosongkan ruang atau hapus area lain, lalu coba lagi.',
   'offline.presetZoom': 'Zoom {min} sampai {max}',
   'offline.presetSize': 'Sekitar {size}',
+  // offline search (Phase 12B). Tulisan tangan, tanpa em dash.
+  'offline.searchBadge': 'Offline',
+  'offline.searchScope': 'Pencarian offline hanya mencakup {region}, area terunduh di perangkat ini.',
+  'offline.searchNoResultsTitle': 'Tidak ada hasil',
+  'offline.searchNoResults': 'Tidak ada hasil offline untuk "{query}" di {region}.',
+  'offline.searchNoAreasTitle': 'Tidak ada area offline di perangkat ini',
+  'offline.searchNoAreasBody':
+    'Unduh area peta di Area Offline untuk mencarinya tanpa koneksi.',
+  'offline.searchUnsupportedTitle': 'Browser ini tidak bisa mencari area offline',
+  'offline.searchUnsupportedBody':
+    'Pencarian offline memerlukan IndexedDB, yang tidak tersedia di browser ini. Pencarian online tetap berfungsi.',
+  'offline.searchDisabledTitle': 'Pencarian offline dimatikan',
+  'offline.searchDisabledBody':
+    'Pencarian offline dimatikan untuk aplikasi ini. Pencarian online tetap berfungsi.',
+  'offline.searchAttribution': 'Data offline: {attribution}',
+  'offline.searchDegraded': 'Anda sedang offline. Menampilkan hasil terunduh untuk {region}.',
+  'offline.searchKindCountry': 'Negara',
+  'offline.searchKindRegion': 'Wilayah',
+  'offline.searchKindCity': 'Kota',
+  'offline.searchKindTown': 'Kota kecil',
+  'offline.searchKindVillage': 'Desa',
+  'offline.searchKindSuburb': 'Lingkungan',
+  'offline.searchKindPlace': 'Tempat',
   'profile.offlineTitle': 'Area Offline',
   'profile.offlineBody': 'Unduh area peta untuk digunakan tanpa koneksi.',
+
+  // weather (Phase 12G). Kosakata panel cuaca. Tanpa penyedia cuaca yang
+  // diotorisasi (gerbang W1), semua status data tidak dapat dijangkau, dan
+  // panel memimpin dengan status "tidak tersedia" yang jujur. Tulisan
+  // tangan, tanpa em dash.
+  'weather.control': 'Cuaca',
+  'weather.controlSr': 'Tampilkan cuaca untuk area ini',
+  'weather.title': 'Cuaca',
+  'weather.close': 'Tutup',
+  'weather.scope': 'Kondisi saat ini untuk area peta yang tampil di layar.',
+  'weather.unavailableTitle': 'Cuaca tidak tersedia',
+  'weather.unavailableBody':
+    'Belum ada sumber cuaca yang terhubung, jadi tidak ada yang bisa ditampilkan. Aplikasi ini tidak menampilkan cuaca buatan.',
+  'weather.checkAgain': 'Periksa lagi',
+  'weather.loading': 'Memeriksa cuaca…',
+  'weather.offlineTitle': 'Tidak ada koneksi',
+  'weather.offlineBody': 'Cuaca tidak bisa dijangkau saat ini. Sambungkan kembali dan coba lagi.',
+  'weather.errorTitle': 'Cuaca gagal dimuat',
+  'weather.errorBody': 'Layanan cuaca tidak menjawab. Coba lagi sebentar lagi.',
+  'weather.refresh': 'Muat ulang',
+  'weather.stale': 'Pembacaan ini berumur lebih dari satu jam. Muat ulang untuk kondisi terkini.',
+  'weather.observed': 'Diamati pukul {time}',
+  'weather.updated': 'Diperbarui pukul {time}',
+  'weather.temperature': 'Suhu',
+  'weather.precipitation': 'Curah hujan',
+  'weather.wind': 'Angin',
+  'weather.source': 'Sumber: {provider}',
 
 };

@@ -15,6 +15,7 @@ import {
   toMapError,
 } from './errors.js';
 import { REPORT_TYPES, reportPinImage } from './report-icons.js';
+import { TRAFFIC_JAM_COLOR, TRAFFIC_JAM_CASING_COLOR } from '../services/traffic.js';
 
 // Same-origin, relative to this app. This path is produced by `npm run
 // build:map`, never committed.
@@ -366,10 +367,14 @@ export function createMapLibreAdapter(mapConfig) {
         : null;
       const beforeId = firstSymbol ? firstSymbol.id : undefined;
       // Insertion order = stacking order: alternatives sit beneath the
-      // casing, and the selected route on top of both.
+      // casing, and the selected route on top of both. The traffic jam
+      // pieces (request #26) stack above the selected route so the red
+      // overlay fully covers the indigo line where a jam was reported.
       map.addLayer(routeLayer('hm-routes-alt', { 'line-color': ROUTE_ALTERNATIVE_COLOR, 'line-width': 4, 'line-opacity': 0.7 }), beforeId);
       map.addLayer(routeLayer('hm-routes-casing', { 'line-color': ROUTE_CASING_COLOR, 'line-width': 9, 'line-opacity': 0.4 }), beforeId);
       map.addLayer(routeLayer('hm-routes-main', { 'line-color': ROUTE_COLOR, 'line-width': 6 }), beforeId);
+      map.addLayer(routeLayer('hm-routes-jam-casing', { 'line-color': TRAFFIC_JAM_CASING_COLOR, 'line-width': 9, 'line-opacity': 0.4 }), beforeId);
+      map.addLayer(routeLayer('hm-routes-jam', { 'line-color': TRAFFIC_JAM_COLOR, 'line-width': 6 }), beforeId);
       routeLayersReady = true;
       return true;
     } catch (err) {
@@ -379,28 +384,50 @@ export function createMapLibreAdapter(mapConfig) {
   }
 
   function routeLayer(id, paint) {
+    // The jam overlay layers draw the traffic features (property
+    // `traffic: 'jam'`, only ever emitted for the selected route); every
+    // other route layer keeps the selected/alternative split.
+    const isJamLayer = id === 'hm-routes-jam' || id === 'hm-routes-jam-casing';
+    const filter = isJamLayer
+      ? ['==', ['get', 'traffic'], 'jam']
+      : ['==', ['get', 'selected'], id === 'hm-routes-main' || id === 'hm-routes-casing'];
     return {
       id,
       type: 'line',
       source: 'hm-routes',
-      filter: ['==', ['get', 'selected'], id === 'hm-routes-main' || id === 'hm-routes-casing'],
+      filter,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint,
     };
   }
 
   function routesFeatureCollection(routeList) {
-    return {
-      type: 'FeatureCollection',
-      features: routeList.map((route) => ({
-        type: 'Feature',
-        properties: { selected: Boolean(route.selected) },
-        geometry: {
-          type: 'LineString',
-          coordinates: route.coordinates,
-        },
-      })),
-    };
+    const features = routeList.map((route) => ({
+      type: 'Feature',
+      properties: { selected: Boolean(route.selected) },
+      geometry: {
+        type: 'LineString',
+        coordinates: route.coordinates,
+      },
+    }));
+    // Traffic conditions (request #26): a selected route may carry jam
+    // pieces (contiguous stretches the traffic derivation marked jammed).
+    // Each becomes its own line feature on the same source; the jam layers
+    // draw them in red above the route's normal line. Pieces share their
+    // boundary vertices with the main line, so the overlay tiles it exactly.
+    for (const route of routeList) {
+      const jammed = route.selected && route.traffic && route.traffic.jammed;
+      if (!Array.isArray(jammed)) continue;
+      for (const piece of jammed) {
+        if (!Array.isArray(piece) || piece.length < 2) continue;
+        features.push({
+          type: 'Feature',
+          properties: { selected: true, traffic: 'jam' },
+          geometry: { type: 'LineString', coordinates: piece },
+        });
+      }
+    }
+    return { type: 'FeatureCollection', features };
   }
 
   // ── report pin rendering (Phase 6) ─────────────────────────────────────
@@ -569,11 +596,14 @@ export function createMapLibreAdapter(mapConfig) {
       }
     },
 
-    // `routes` is an array of { coordinates: [[lng, lat], ...], selected }
-    // or null to clear. Each becomes a GeoJSON line feature; the selected
-    // route draws on top (brand colour, cased) and alternatives sit beneath
-    // it, muted. Data set before the style is ready is held and applied on
-    // load, so a screen never has to wait for the map first.
+    // `routes` is an array of { coordinates: [[lng, lat], ...], selected,
+    // traffic? } or null to clear. Each becomes a GeoJSON line feature; the
+    // selected route draws on top (brand colour, cased) and alternatives sit
+    // beneath it, muted. The optional `traffic: { jammed: [[...], ...] }`
+    // carries contiguous jammed stretches of the selected route, drawn in a
+    // red overlay above the route's normal line (request #26). Data set
+    // before the style is ready is held and applied on load, so a screen
+    // never has to wait for the map first.
     setRoutes(nextRoutes) {
       routes = Array.isArray(nextRoutes) && nextRoutes.length ? nextRoutes : null;
       if (routes && map && map.isStyleLoaded()) applyRoutes(routes);
