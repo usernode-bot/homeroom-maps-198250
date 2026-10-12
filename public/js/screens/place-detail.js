@@ -25,6 +25,9 @@ import { createPlaceCard } from '../components/place/place-card.js';
 // Phase 7: saving a place from its detail view. Additive — the sections below
 // are untouched, and the button only ever reflects the server's real answer.
 import { createSaveButton } from '../components/place/save-button.js';
+// Phase 12J: the Business section (claim / verified profile). Additive — it
+// appends its own section after the existing ones and fetches its own state.
+import { createBusinessSection } from '../components/business/claim-dialog.js';
 import { openListPicker } from '../components/saved/list-picker.js';
 import * as mapService from '../services/map.js';
 import { t } from '../i18n/index.js';
@@ -231,6 +234,10 @@ export function createPlaceDetailView({ session, onBack }) {
   // place and re-appended on every update, so the button keeps its state
   // across the loading -> ready transition instead of re-checking each time.
   const initialPlace = session.getState().place || {};
+  // The Business section (Phase 12J) for THIS place, built once from the
+  // session's place — a place detail session never changes place — and
+  // re-appended on every update like saveActions.
+  const businessSection = createBusinessSection({ place: initialPlace });
   const saveActions = el('div', { class: 'flex flex-wrap items-center gap-2', dataset: { placeSaveActions: 'true' } }, [
     createSaveButton(initialPlace),
     el(
@@ -292,6 +299,7 @@ export function createPlaceDetailView({ session, onBack }) {
       contactSection(place),
       hoursSection(place),
       ratingSection(place),
+      businessSection.root,
     );
   }
 

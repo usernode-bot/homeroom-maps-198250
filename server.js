@@ -11,6 +11,7 @@ const {
   PUBLIC_DIR,
   resolveMapConfig,
   COMMUNITY_REVIEWERS,
+  BUSINESS_REVIEWERS,
   LLM_ENABLED,
 } = require('./config');
 const searchApi = require('./search');
@@ -20,6 +21,8 @@ const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
 const { createReportsStore } = require('./reports/store');
 const { createReportsRouter } = require('./reports/routes');
+const { createBusinessStore } = require('./business/store');
+const { createBusinessRouter } = require('./business/routes');
 const placesApi = require('./places');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
@@ -62,6 +65,13 @@ const profiles = createProfiles({ pool });
 // proposal store, so a moderation system plugged in there hears report
 // events too (report.flagged and friends).
 const reportsStore = createReportsStore({ pool, policies: communityPolicies });
+
+// Business profiles (Phase 12J): claims over places, verified only by a
+// configured business reviewer's decision, with the profile, its revisions,
+// its audit trail and its flags. The profile table is public; the four
+// tables carrying personal data (claims, revisions, events, flags) are
+// staging:private.
+const businessStore = createBusinessStore({ pool, platformOrigin: PLATFORM_ORIGIN });
 
 // AI assistant (Phase 11). The ONLY AI path is the platform LLM proxy,
 // enabled only when BOTH USERNODE_LLM_PROXY_URL and USERNODE_LLM_PROXY_TOKEN
@@ -350,6 +360,16 @@ app.use(
   createReportsRouter({ store: reportsStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
 );
 
+// Business profiles (Phase 12J). Reviewers are the BUSINESS_REVIEWERS
+// configuration falling back to COMMUNITY_REVIEWERS — the same comma-separated
+// username convention the community and reports routers use. An empty set is
+// a valid state: claims then wait in an honest "no reviewer configured" state
+// instead of anyone self-appointing.
+app.use(
+  '/api/business',
+  createBusinessRouter({ store: businessStore, reviewers: parseReviewers(BUSINESS_REVIEWERS || COMMUNITY_REVIEWERS) }),
+);
+
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
 // never leaves the server. The typed error codes from places/provider.js map
@@ -511,6 +531,10 @@ async function start() {
   if (IS_STAGING) await tripStore.seedStaging();
   await reportsStore.migrate();
   if (IS_STAGING) await reportsStore.seedStaging();
+  // Business profiles (Phase 12J): the five additive tables, then staging
+  // demo claims/profile by fake owners only.
+  await businessStore.migrate();
+  if (IS_STAGING) await businessStore.seedStaging();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;

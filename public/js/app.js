@@ -19,6 +19,8 @@ import * as trips from './screens/trips.js';
 import * as profile from './screens/profile.js';
 import * as saved from './screens/saved.js';
 import * as offlineAreas from './screens/offline-areas.js';
+// Business (Phase 12J): a Profile sub-screen with its own hash route.
+import * as business from './screens/business.js';
 import { resolveOfflineCapability } from './services/offline-capability.js';
 import { syncRegistration, announceAllowedHosts } from './services/offline-registration.js';
 import { allowedHostsFor } from './services/offline-cache-policy.js';
@@ -38,6 +40,9 @@ router.register('saved', saved);
 // Offline Areas (Phase 12A): also a Profile sub-screen with its own hash
 // route.
 router.register('offline-areas', offlineAreas);
+// Business (Phase 12J): the claims-and-businesses dashboard, plus the
+// reviewer queue for configured business reviewers.
+router.register('business', business);
 
 const root = document.getElementById('app');
 let currentName = 'home';

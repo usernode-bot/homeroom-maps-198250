@@ -93,6 +93,7 @@ export async function render(ctx) {
     unitsCard(),
     tripsCard(),
     offlineAreasCard(),
+    businessCard(),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
@@ -118,6 +119,26 @@ function tripsCard() {
     ]),
   ]);
   return c;
+}
+
+// Business (Phase 12J) — the claims-and-businesses dashboard entry. Same
+// shape as the Trips and Offline Areas cards: a title, one line of context,
+// and the way in. #/business is deep-linkable like every other sub-screen.
+function businessCard() {
+  return card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('business.dashboardTitle') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.businessBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('business.open'), {
+        variant: 'secondary',
+        attrs: { dataset: { openBusiness: 'true' } },
+        onClick: () => router.navigate('business'),
+      }),
+    ]),
+  ]);
 }
 
 // Offline Areas — the Phase 12A entry. Same shape as the Trips card: a

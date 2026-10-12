@@ -202,6 +202,16 @@ function parseOsrmProfiles(raw) {
 // in staging and production alike; the role is never granted by environment.
 const COMMUNITY_REVIEWERS = process.env.COMMUNITY_REVIEWERS || '';
 
+// Business reviewers (Phase 12J): comma-separated platform usernames allowed
+// to decide business claims (verify or reject) and to moderate business
+// profiles. Declared in dapp.json (required: false). It is its own list, not
+// the community list: verifying a business claim needs the same kind of
+// judgment but a different duty of care. The business router falls back to
+// COMMUNITY_REVIEWERS when this is unset, so one reviewer configuration can
+// cover both duties; an empty set is a valid state (claims wait, nobody
+// self-appoints).
+const BUSINESS_REVIEWERS = process.env.BUSINESS_REVIEWERS || '';
+
 // Place-data provider configuration (Phase 3, Places).
 //
 // PLACE_PROVIDER names the adapter the place service (places/) uses for
@@ -255,6 +265,7 @@ module.exports = {
   OSRM_URL,
   OSRM_PROFILES,
   COMMUNITY_REVIEWERS,
+  BUSINESS_REVIEWERS,
   PLACE_PROVIDER,
   LLM_PROXY_URL,
   LLM_PROXY_TOKEN,
