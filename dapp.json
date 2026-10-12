@@ -704,10 +704,7 @@
     }
   ],
   "governance": {
-    "approvers": "anyone",
-    "approvals": {
-      "atLeast": 3
-    }
+    "preset": "two_yeses"
   },
   "llm": {
     "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",
