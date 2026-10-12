@@ -12,6 +12,7 @@
 import { el } from '../components/dom.js';
 import { mapIcon } from './icons.js';
 import { t } from '../i18n/index.js';
+import { threeDToggle, terrainToggle } from './controls-3d.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -57,6 +58,11 @@ function iconButton({ icon, label, onClick }) {
 
 // Build the control column. Returns the element; handlers are wired by the
 // caller through the callbacks so this stays a pure view.
+//
+// Phase 12H: `threeD` and `terrain` are optional `{ on, onToggle }` slots.
+// The caller passes them ONLY when the capability says the control may
+// exist, so an unavailable capability leaves no control behind at all —
+// there is never a dead button in the column.
 export function mapControls({
   capabilities,
   onZoomIn,
@@ -66,6 +72,8 @@ export function mapControls({
   onWeather,
   myLocationOn,
   onTraffic,
+  threeD = null,
+  terrain = null,
 }) {
   const nodes = [
     buttonWithHandler(iconButton({ icon: 'plus', label: t('map.zoomIn') }), onZoomIn),
@@ -78,6 +86,11 @@ export function mapControls({
         onResetNorth,
       ),
     );
+  }
+  // The 3D camera toggle sits with the other camera controls, above My
+  // location.
+  if (capabilities.pitch && threeD) {
+    nodes.push(threeDToggle({ on: threeD.on, onToggle: threeD.onToggle }));
   }
   nodes.push(
     el(
@@ -93,6 +106,11 @@ export function mapControls({
       [mapIcon('locate', { class: 'h-5 w-5' }), el('span', { text: t('map.myLocation') })],
     ),
   );
+  // The Terrain toggle sits with the view controls; it only exists when a
+  // terrain source is configured (the caller passes the slot only then).
+  if (capabilities.terrain && terrain) {
+    nodes.push(terrainToggle({ on: terrain.on, onToggle: terrain.onToggle }));
+  }
   // Weather (Phase 12G): opens the weather panel for the map centre. The
   // control is always offered while the map is live; what the panel reports
   // is the capability gate's decision, not the control's.

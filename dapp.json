@@ -2,7 +2,7 @@
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
   "icon": {
-    "image": "brand/icon.png",
+    "image": "brand/icon.jpg",
     "emoji": "🗺️"
   },
   "secrets": [
@@ -66,6 +66,36 @@
       "default": "true"
     },
     {
+      "key": "LOCATION_SHARING_ENABLED",
+      "description": "Operator switch for location sharing (Phase 12F). Turned on by default. Setting it off makes every /api/sharing route answer the honest not_configured 501 and the screen show its unavailable state; it can never change which code runs or widen what is shared.",
+      "required": false,
+      "default": "true"
+    },
+    {
+      "key": "MAP_3D_ENABLED",
+      "description": "Operator switch for the 3D camera (Phase 12H): pitch and bearing controls on the map. On by default; the camera adds no data source, only a view of tiles already loading. Set false to remove the 3D control.",
+      "required": false,
+      "default": "true"
+    },
+    {
+      "key": "MAP_3D_MAX_PITCH",
+      "description": "The steepest camera pitch the 3D control may apply, in degrees (0 to 85). Defaults to 60, MapLibre's own maximum. A malformed value falls back to 60.",
+      "required": false,
+      "default": "60"
+    },
+    {
+      "key": "MAP_3D_TERRAIN_URL",
+      "description": "DEM tile template for terrain elevation (Phase 12H), e.g. an AWS Mapzen Terrain Tiles terrarium endpoint ({z}/{x}/{y} PNG). Empty by default, which keeps terrain off. Terrain turns on only when an attribution line is also set.",
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "MAP_TERRAIN_ATTRIBUTION",
+      "description": "Attribution line required with the terrain tiles, naming the DEM data's copyright holders (for AWS Mapzen Terrain Tiles: Mapzen, Mapbox, OpenStreetMap). Terrain stays off while this is empty, whatever MAP_3D_TERRAIN_URL says.",
+      "required": false,
+      "default": ""
+    },
+    {
       "key": "WEATHER_PROVIDER",
       "description": "Which weather provider adapter to use for current conditions at the map centre (Phase 12G). No adapter is implemented yet, and no weather source is documented as authorized for this app, so leaving this unset keeps /api/weather/current answering 501 instead of serving made-up weather. A name alone is not enough either: the W1 gate additionally requires docs/weather-provider-rights.md to authorize the provider for live data with named evidence. Selection criteria, in order: (1) licensing that permits live use and display with attribution, (2) worldwide point coverage at the precision the panel shows, (3) cost at this app's scale, (4) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
       "required": false
@@ -101,10 +131,47 @@
       "allowConsoleErrors": true
     },
     {
+      "name": "Top bar shows the Homeroom Maps logo",
+      "path": "/#/",
+      "expectSelector": "header img[data-app-logo='mark'][src='/icons/logo-mark-96.png']",
+      "allowConsoleErrors": true
+    },
+    {
       "name": "Home shows map attribution",
       "path": "/#/",
       "expectText": "OpenStreetMap",
       "allowConsoleErrors": true
+    },
+    {
+      "id": "map.threeD",
+      "name": "Home shows the 3D camera control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"3d\"]",
+      "visual": true,
+      "impact": [
+        "public/js/map/**",
+        "public/js/screens/home.js",
+        "public/js/services/map.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "config.js"
+      ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Terrain control stays off while no terrain source is configured",
+      "path": "/#/",
+      "expectSelector": "html:not(:has([data-map-control=\"terrain\"]))"
+    },
+    {
+      "name": "Unsupported map state has no 3D controls",
+      "path": "/#/?map=unsupported",
+      "expectSelector": "html:not(:has([data-map-control=\"3d\"]))"
+    },
+    {
+      "name": "3D control copy in Indonesian",
+      "path": "/#/?lang=id",
+      "expectText": "Tampilan 3D"
     },
     {
       "name": "Home map not-configured state",
@@ -539,6 +606,47 @@
       "expectText": "Routing offline dimatikan"
     },
     {
+      "id": "sharing.screen",
+      "name": "Location Sharing screen renders both halves",
+      "path": "/#/sharing",
+      "expectSelector": "[data-sharing-host]",
+      "visual": true,
+      "impact": [
+        "sharing/**",
+        "public/js/screens/sharing.js",
+        "public/js/services/sharing.js",
+        "public/js/services/sharing-core.js",
+        "public/js/components/sharing/**",
+        "public/js/screens/profile.js",
+        "public/js/screens/home.js",
+        "public/js/app.js",
+        "public/js/i18n/**",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Profile links to Location Sharing",
+      "path": "/#/profile",
+      "expectText": "Location Sharing"
+    },
+    {
+      "name": "Location Sharing copy in Indonesian",
+      "path": "/#/sharing?lang=id",
+      "expectText": "Berbagi Lokasi"
+    },
+    {
+      "name": "Location Sharing demo renders canned data",
+      "path": "/#/sharing?demo=1",
+      "expectText": "Staging demo"
+    },
+    {
+      "name": "Location sharing feature-off state is honest",
+      "path": "/#/sharing?sharing=unavailable",
+      "expectText": "Location sharing is not available"
+    },
+    {
       "name": "Home shows the weather control",
       "path": "/#/",
       "expectSelector": "[data-map-control=\"weather\"]"
@@ -578,7 +686,9 @@
   ],
   "governance": {
     "approvers": "anyone",
-    "approvals": "default"
+    "approvals": {
+      "atLeast": 3
+    }
   },
   "llm": {
     "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",

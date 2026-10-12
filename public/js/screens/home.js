@@ -22,6 +22,7 @@ import { createMapService, trafficPanelState } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
 import { mapControls } from '../map/controls.js';
+import { setPressed } from '../map/controls-3d.js';
 import { createSearchSession, setOfflineSearchCenter, bootQuery } from '../services/search.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
@@ -36,12 +37,25 @@ import { fetchConfig } from '../api.js';
 import { getState, setState } from '../state.js';
 import { t } from '../i18n/index.js';
 import { formatDistance } from '../i18n/format.js';
+import { readPref, writePref } from '../i18n/prefs.js';
+import { fetchIncoming } from '../services/sharing.js';
+import { ageLabel } from '../services/sharing-core.js';
 
 const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
+
+// The 3D camera preference (Phase 12H): device-local like the theme, guarded
+// by the shared prefs helper. Only 'on' and 'off' are ever stored, and the
+// default is off, so the map always opens level until the person asks for 3D.
+const MAP_3D_PREF = 'hm-map-3d';
 
 // The live map for the screen currently mounted. Torn down on the next render
 // so a navigation never leaves a WebGL context or tile poller behind.
 let activeService = null;
+// The 3D toggles' live state for the mounted screen; reset per render from
+// the preference (3D) or its default (terrain, which is never persisted —
+// it exists only while an operator configures a source).
+let map3dOn = false;
+let mapTerrainOn = false;
 
 // The open traffic sheet's dismiss handle, so a second tap (or a deep link
 // plus a tap) never stacks a second panel over the map.
@@ -62,6 +76,10 @@ export async function render(ctx) {
 
   const mapConfig = (getState().config && getState().config.map) || null;
   const force = demoState();
+  // Fresh screen: the 3D camera state restarts from the stored preference,
+  // and terrain restarts off (it is not persisted).
+  map3dOn = readPref(MAP_3D_PREF, ['on', 'off'], 'off') === 'on';
+  mapTerrainOn = false;
 
   const session = createSearchSession({ onSelect: focusSelectedPlace });
 
@@ -229,7 +247,16 @@ export async function render(ctx) {
         styleUrl: null,
         styleUrlDark: null,
         attribution: DEFAULT_ATTRIBUTION,
-        capabilities: { rotation: false, touchGestures: false, accuracyCircle: false, offline: false },
+        capabilities: {
+          rotation: false,
+          touchGestures: false,
+          accuracyCircle: false,
+          offline: false,
+          pitch: false,
+          buildings: false,
+          terrain: false,
+        },
+        threeD: { maxPitch: 60, terrainUrl: '', terrainAttribution: '' },
       };
 
   // The app's own attribution strip is rendered up front from config, so it is
@@ -238,6 +265,11 @@ export async function render(ctx) {
   renderAttribution(attribution, config.attribution || DEFAULT_ATTRIBUTION);
 
   const view = { container, surface, overlay, controls, note, viewRef };
+
+  // A `?share=<id>` deep link (Phase 12F): one incoming share opened straight
+  // onto the map. Held on the view and applied once the map is ready.
+  const shareId = shareParam();
+  if (shareId) view.pendingShareId = shareId;
 
   // A forced demo state short-circuits the real path only for the state it
   // names; every other route mounts the live adapter through the service.
@@ -265,6 +297,10 @@ function mountMap(view, config, force = null) {
   showOverlay(view, loading({ label: t('map.loading') }));
   const service = createMapService(config, {
     force,
+    onTerrainError: () => {
+      if (activeService !== service) return;
+      onTerrainFailed(view);
+    },
     onState: (state, err) => {
       if (activeService !== service) return;
       if (state === 'ready') onReady(service, view);
@@ -281,6 +317,11 @@ function onReady(service, view) {
   hideOverlay(view);
   view.controls.replaceChildren(liveControls(service, view));
   view.viewRef.service = service;
+  // A stored 3D preference applies once the map is ready to take camera
+  // moves; the toggle already rendered in its pressed state.
+  if (map3dOn && service.capabilities().pitch) {
+    service.set3DEnabled(true);
+  }
   // Offline search picks the region covering the map center when the renderer
   // exposes one; the keyless adapter may not, in which case the service falls
   // back to the most recently completed region. Either way nothing is guessed.
@@ -291,6 +332,49 @@ function onReady(service, view) {
       setOfflineSearchCenter(null);
     }
   }
+  applySharedLocation(service, view);
+}
+
+// Phase 12F: one incoming share, opened by deep link (#/?share=<id>). Only
+// the single position the sharer actually posted is shown — the marker is
+// labelled with their initial and the note carries the name and the honest
+// age of the fix. Never a trail, never a guess from any other data.
+async function applySharedLocation(service, view) {
+  if (!view.pendingShareId) return;
+  const wanted = view.pendingShareId;
+  view.pendingShareId = null;
+  let incoming;
+  try {
+    incoming = await fetchIncoming();
+  } catch {
+    showNote(view, t('sharing.shareLoadFailed'));
+    return;
+  }
+  const shares = (incoming && Array.isArray(incoming.shares) ? incoming.shares : []);
+  const item = shares.find((s) => String(s.id) === String(wanted));
+  if (!item) {
+    showNote(view, t('sharing.shareGone'));
+    return;
+  }
+  const fix = item.lastFix;
+  if (!fix || typeof fix.updatedAt !== 'string') {
+    showNote(view, t('sharing.mapNoFix'));
+    return;
+  }
+  const name = (item.sharer && item.sharer.username) || '?';
+  const initial = name.slice(0, 1).toUpperCase();
+  try {
+    service.setMarkers([{ lng: fix.lng, lat: fix.lat, label: initial }]);
+    if (typeof service.centerOn === 'function') {
+      service.centerOn({ lat: fix.lat, lng: fix.lng }, 14);
+    }
+  } catch {
+    /* the note still states what was shared, even if the marker cannot draw */
+  }
+  showNote(
+    view,
+    t('sharing.mapNote', { name }) + ' · ' + ageLabel(item.fixAgeSeconds, { t }),
+  );
 }
 
 function onFailure(service, view, err) {
@@ -368,18 +452,52 @@ function hideOverlay(view) {
 }
 
 function liveControls(service, view) {
+  const capabilities = service.capabilities();
   const column = mapControls({
-    capabilities: service.capabilities(),
+    capabilities,
     myLocationOn: false,
     onZoomIn: () => service.zoomIn(),
     onZoomOut: () => service.zoomOut(),
     onResetNorth: () => service.resetNorth(),
     onMyLocation: () => requestLocation(service, view),
+    // The 3D slots are passed only when the capability says the control may
+    // exist; an unavailable capability leaves no control behind (Phase 12H).
+    threeD: capabilities.pitch
+      ? { on: map3dOn, onToggle: (next) => setThreeD(service, view, next) }
+      : null,
+    terrain: capabilities.terrain
+      ? { on: mapTerrainOn, onToggle: (next) => setTerrain(service, view, next) }
+      : null,
     onWeather: () => openWeatherPanel(view.viewRef),
     onTraffic: () => openTrafficPanel(),
   });
   column.classList.add('pointer-events-auto');
   return column;
+}
+
+// ── 3D camera and terrain toggles (Phase 12H) ────────────────────────────
+
+function setThreeD(service, view, next) {
+  map3dOn = Boolean(next);
+  writePref(MAP_3D_PREF, map3dOn ? 'on' : 'off');
+  service.set3DEnabled(map3dOn);
+  setPressed(view.controls.querySelector('[data-map-control="3d"]'), map3dOn);
+}
+
+function setTerrain(service, view, next) {
+  mapTerrainOn = Boolean(next);
+  service.setTerrainEnabled(mapTerrainOn);
+  setPressed(view.controls.querySelector('[data-map-control="terrain"]'), mapTerrainOn);
+}
+
+// A terrain source that failed is torn down by the adapter; the capability
+// went with it, so the screen only has to say so and reset the toggle.
+function onTerrainFailed(view) {
+  mapTerrainOn = false;
+  setPressed(view.controls.querySelector('[data-map-control="terrain"]'), false);
+  const message = t('map.terrainFailed');
+  showNote(view, message);
+  toast(message, { error: true });
 }
 
 // ── live traffic panel (Phase 12D) ───────────────────────────────────────
@@ -833,6 +951,24 @@ function assistantMount(searchSession, viewRef) {
   if (openState) setTimeout(() => openSheet(), 0);
 
   return wrapper;
+}
+
+// The `?share=<id>` deep-link value for one incoming share, read from the URL
+// query or the query after the hash, exactly like assistantParam reads its
+// own parameter.
+function shareParam() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('share');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('share');
+    }
+  } catch {
+    /* no URL, no share param */
+  }
+  return value && String(value).trim() ? String(value).trim() : null;
 }
 
 // The assistant deep-link value ('demo' | 'unavailable'), read from the URL

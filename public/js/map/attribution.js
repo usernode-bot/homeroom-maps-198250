@@ -22,6 +22,10 @@ const LINK_TARGETS = {
   openmaptiles: 'https://openmaptiles.org/',
   openfreemap: 'https://openfreemap.org/',
   maplibre: MAPLIBRE_SITE,
+  // The DEM source an operator configures for terrain (Phase 12H) names its
+  // own credit line in MAP_TERRAIN_ATTRIBUTION; the default candidate (AWS
+  // Mapzen Terrain Tiles) credits Mapzen, which gets its project page here.
+  mapzen: 'https://mapzen.com/',
 };
 
 export function attributionParts(text) {
