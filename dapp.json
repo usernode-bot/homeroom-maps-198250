@@ -2,7 +2,7 @@
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
   "icon": {
-    "image": "brand/icon.png",
+    "image": "brand/icon.jpg",
     "emoji": "🗺️"
   },
   "secrets": [
@@ -70,6 +70,47 @@
       "description": "Operator switch for offline search (Phase 12B). Turned on by default. It is independent of the offline-download gate: searching regions a device has already stored is a device-local read, so it still works while tile downloads are closed. Setting it off makes the offline search states honest; online search is unaffected.",
       "required": false,
       "default": "true"
+    },
+    {
+      "key": "LOCATION_SHARING_ENABLED",
+      "description": "Operator switch for location sharing (Phase 12F). Turned on by default. Setting it off makes every /api/sharing route answer the honest not_configured 501 and the screen show its unavailable state; it can never change which code runs or widen what is shared.",
+      "required": false,
+      "default": "true"
+    },
+    {
+      "key": "MAP_3D_ENABLED",
+      "description": "Operator switch for the 3D camera (Phase 12H): pitch and bearing controls on the map. On by default; the camera adds no data source, only a view of tiles already loading. Set false to remove the 3D control.",
+      "required": false,
+      "default": "true"
+    },
+    {
+      "key": "MAP_3D_MAX_PITCH",
+      "description": "The steepest camera pitch the 3D control may apply, in degrees (0 to 85). Defaults to 60, MapLibre's own maximum. A malformed value falls back to 60.",
+      "required": false,
+      "default": "60"
+    },
+    {
+      "key": "MAP_3D_TERRAIN_URL",
+      "description": "DEM tile template for terrain elevation (Phase 12H), e.g. an AWS Mapzen Terrain Tiles terrarium endpoint ({z}/{x}/{y} PNG). Empty by default, which keeps terrain off. Terrain turns on only when an attribution line is also set.",
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "MAP_TERRAIN_ATTRIBUTION",
+      "description": "Attribution line required with the terrain tiles, naming the DEM data's copyright holders (for AWS Mapzen Terrain Tiles: Mapzen, Mapbox, OpenStreetMap). Terrain stays off while this is empty, whatever MAP_3D_TERRAIN_URL says.",
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "WEATHER_PROVIDER",
+      "description": "Which weather provider adapter to use for current conditions at the map centre (Phase 12G). No adapter is implemented yet, and no weather source is documented as authorized for this app, so leaving this unset keeps /api/weather/current answering 501 instead of serving made-up weather. A name alone is not enough either: the W1 gate additionally requires docs/weather-provider-rights.md to authorize the provider for live data with named evidence. Selection criteria, in order: (1) licensing that permits live use and display with attribution, (2) worldwide point coverage at the precision the panel shows, (3) cost at this app's scale, (4) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
+      "required": false
+    },
+    {
+      "key": "TRAFFIC_ENABLED",
+      "description": "Operator switch for the live traffic layer (Phase 12D). Can only narrow the live-traffic permission gate (T1), never widen it: while the repository documents no traffic-provider rights (docs/traffic-provider-rights.md does not exist) and no traffic adapter is implemented, live traffic stays honestly unavailable no matter how this is set. No traffic API key is declared here; the chosen provider's key gets declared in the same change that implements its adapter, per the platform secrets convention.",
+      "required": false,
+      "default": "true"
     }
   ],
   "visibility": {
@@ -96,15 +137,87 @@
       "allowConsoleErrors": true
     },
     {
+      "name": "Top bar shows the Homeroom Maps logo",
+      "path": "/#/",
+      "expectSelector": "header img[data-app-logo='mark'][src='/icons/logo-mark-96.png']",
+      "allowConsoleErrors": true
+    },
+    {
       "name": "Home shows map attribution",
       "path": "/#/",
       "expectText": "OpenStreetMap",
       "allowConsoleErrors": true
     },
     {
+      "id": "map.threeD",
+      "name": "Home shows the 3D camera control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"3d\"]",
+      "visual": true,
+      "impact": [
+        "public/js/map/**",
+        "public/js/screens/home.js",
+        "public/js/services/map.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "config.js"
+      ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Terrain control stays off while no terrain source is configured",
+      "path": "/#/",
+      "expectSelector": "html:not(:has([data-map-control=\"terrain\"]))"
+    },
+    {
+      "name": "Unsupported map state has no 3D controls",
+      "path": "/#/?map=unsupported",
+      "expectSelector": "html:not(:has([data-map-control=\"3d\"]))"
+    },
+    {
+      "name": "3D control copy in Indonesian",
+      "path": "/#/?lang=id",
+      "expectText": "Tampilan 3D"
+    },
+    {
       "name": "Home map not-configured state",
       "path": "/#/?map=unconfigured",
       "expectText": "Map is not configured yet"
+    },
+    {
+      "name": "Home shows the Traffic control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"traffic\"]"
+    },
+    {
+      "name": "Traffic panel shows the honest not-connected state",
+      "path": "/#/?traffic=open",
+      "expectSelector": "[data-traffic-panel]",
+      "expectText": "Live traffic is not connected yet"
+    },
+    {
+      "name": "Traffic panel copy in Indonesian",
+      "path": "/#/?traffic=open&lang=id",
+      "expectText": "Lalu lintas langsung belum tersambung"
+    },
+    {
+      "name": "Home location denied state offers Allow location",
+      "path": "/#/?location=denied",
+      "expectSelector": "[data-location-help] [data-location-retry]",
+      "expectText": "Allow location",
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Home shows location settings steps after a second denial",
+      "path": "/#/?location=steps",
+      "expectText": "Turn on location in your phone's settings",
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Location settings steps in Indonesian",
+      "path": "/#/?location=steps&lang=id",
+      "expectText": "Aktifkan lokasi di pengaturan ponsel Anda",
+      "allowConsoleErrors": true
     },
     {
       "name": "Search bar renders on Home",
@@ -492,6 +605,53 @@
       "expectText": "Find a place"
     },
     {
+      "id": "directions.offline-state",
+      "name": "Directions shows the honest offline routing state while offline",
+      "path": "/#/directions?to=Berlin%2C52.52%2C13.405&from=Hamburg%2C53.55%2C9.99&navigate=1&offline=1",
+      "expectSelector": "[data-offline-routing-state=\"disabled\"]",
+      "expectText": "Offline routing is turned off",
+      "visual": true,
+      "impact": [
+        "public/js/screens/directions.js",
+        "public/js/services/offline-routing*.js",
+        "public/js/services/offline-search-capability.js",
+        "public/js/services/routing.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "offline/routing-config.js",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ],
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Directions offline state copy in Indonesian",
+      "path": "/#/directions?to=Berlin%2C52.52%2C13.405&from=Hamburg%2C53.55%2C9.99&navigate=1&offline=1&lang=id",
+      "expectText": "Routing offline dimatikan"
+    },
+    {
+      "id": "sharing.screen",
+      "name": "Location Sharing screen renders both halves",
+      "path": "/#/sharing",
+      "expectSelector": "[data-sharing-host]",
+      "visual": true,
+      "impact": [
+        "sharing/**",
+        "public/js/screens/sharing.js",
+        "public/js/services/sharing.js",
+        "public/js/services/sharing-core.js",
+        "public/js/components/sharing/**",
+        "public/js/screens/profile.js",
+        "public/js/screens/home.js",
+        "public/js/app.js",
+        "public/js/i18n/**",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
       "id": "business.dashboard",
       "name": "Business dashboard renders the person's claims and businesses",
       "path": "/#/business",
@@ -521,6 +681,57 @@
       "name": "Business dashboard copy in Indonesian",
       "path": "/#/business?lang=id",
       "expectText": "Bisnis"
+    },
+    {
+      "name": "Profile links to Location Sharing",
+      "path": "/#/profile",
+      "expectText": "Location Sharing"
+    },
+    {
+      "name": "Location Sharing copy in Indonesian",
+      "path": "/#/sharing?lang=id",
+      "expectText": "Berbagi Lokasi"
+    },
+    {
+      "name": "Location Sharing demo renders canned data",
+      "path": "/#/sharing?demo=1",
+      "expectText": "Staging demo"
+    },
+    {
+      "name": "Location sharing feature-off state is honest",
+      "path": "/#/sharing?sharing=unavailable",
+      "expectText": "Location sharing is not available"
+    },
+    {
+      "name": "Home shows the weather control",
+      "path": "/#/",
+      "expectSelector": "[data-map-control=\"weather\"]"
+    },
+    {
+      "id": "weather.panel",
+      "name": "Weather panel reports the honest unavailable state",
+      "path": "/#/?weather=open",
+      "expectSelector": "[data-weather-panel][data-weather-state=\"unavailable\"]",
+      "expectText": "Weather unavailable",
+      "visual": true,
+      "impact": [
+        "weather/**",
+        "public/js/services/weather*.js",
+        "public/js/components/weather/**",
+        "public/js/map/controls.js",
+        "public/js/map/icons.js",
+        "public/js/screens/home.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "config.js",
+        "server.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Weather panel copy in Indonesian",
+      "path": "/#/?weather=open&lang=id",
+      "expectText": "Cuaca tidak tersedia"
     }
   ],
   "permissions": [
@@ -531,7 +742,9 @@
   ],
   "governance": {
     "approvers": "anyone",
-    "approvals": "default"
+    "approvals": {
+      "atLeast": 3
+    }
   },
   "llm": {
     "purpose": "Answers questions about places, routes, your trips and saved places using the map data.",

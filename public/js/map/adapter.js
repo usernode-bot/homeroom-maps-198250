@@ -14,7 +14,9 @@
 //       renderer's own attribution for the camera's current centre.
 //   centerOn(latlng, zoom?)            -> move the camera
 //   zoomIn() / zoomOut()               -> one zoom step
-//   resetNorth()                       -> return bearing to 0
+//   resetNorth()                       -> return bearing to 0 and level the
+//                                         pitch (Phase 12H), so one tap
+//                                         recovers the camera fully
 //   setStyle(styleUrl)                 -> swap basemap style, keep camera
 //   setUserLocation({ lat, lng, accuracy }) -> marker + accuracy circle, or
 //                                             clear it when passed null
@@ -35,7 +37,19 @@
 //                                         and applied on load like routes
 //   fitBounds({ west, south, east, north }, opts?) -> fit the camera to a
 //                                         route's bounds (Directions)
-//   capabilities                       -> { rotation, touchGestures, accuracyCircle }
+//   set3DEnabled(enabled)              -> ease the camera between flat and
+//                                         the 3D pitch (Phase 12H); disabling
+//                                         also returns north
+//   setPitch(pitch)                    -> set the camera pitch, clamped to
+//                                         the configured max
+//   setTerrainEnabled(enabled)         -> toggle the terrain elevation
+//                                         source (only real when one is
+//                                         configured); a failing source is
+//                                         reported once and torn down
+//   capabilities                       -> { rotation, touchGestures,
+//                                         accuracyCircle, pitch, buildings,
+//                                         terrain }; buildings is detected
+//                                         from the live style, never claimed
 //   destroy()                          -> remove the map and listeners
 
 import { MapError, MapErrorKind, toMapError } from './errors.js';
