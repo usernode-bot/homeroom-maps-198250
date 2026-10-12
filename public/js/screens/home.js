@@ -38,6 +38,8 @@ import { getState, setState } from '../state.js';
 import { t } from '../i18n/index.js';
 import { formatDistance } from '../i18n/format.js';
 import { readPref, writePref } from '../i18n/prefs.js';
+import { fetchIncoming } from '../services/sharing.js';
+import { ageLabel } from '../services/sharing-core.js';
 
 const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
 
@@ -264,6 +266,11 @@ export async function render(ctx) {
 
   const view = { container, surface, overlay, controls, note, viewRef };
 
+  // A `?share=<id>` deep link (Phase 12F): one incoming share opened straight
+  // onto the map. Held on the view and applied once the map is ready.
+  const shareId = shareParam();
+  if (shareId) view.pendingShareId = shareId;
+
   // A forced demo state short-circuits the real path only for the state it
   // names; every other route mounts the live adapter through the service.
   if (force === 'unconfigured') {
@@ -325,6 +332,49 @@ function onReady(service, view) {
       setOfflineSearchCenter(null);
     }
   }
+  applySharedLocation(service, view);
+}
+
+// Phase 12F: one incoming share, opened by deep link (#/?share=<id>). Only
+// the single position the sharer actually posted is shown — the marker is
+// labelled with their initial and the note carries the name and the honest
+// age of the fix. Never a trail, never a guess from any other data.
+async function applySharedLocation(service, view) {
+  if (!view.pendingShareId) return;
+  const wanted = view.pendingShareId;
+  view.pendingShareId = null;
+  let incoming;
+  try {
+    incoming = await fetchIncoming();
+  } catch {
+    showNote(view, t('sharing.shareLoadFailed'));
+    return;
+  }
+  const shares = (incoming && Array.isArray(incoming.shares) ? incoming.shares : []);
+  const item = shares.find((s) => String(s.id) === String(wanted));
+  if (!item) {
+    showNote(view, t('sharing.shareGone'));
+    return;
+  }
+  const fix = item.lastFix;
+  if (!fix || typeof fix.updatedAt !== 'string') {
+    showNote(view, t('sharing.mapNoFix'));
+    return;
+  }
+  const name = (item.sharer && item.sharer.username) || '?';
+  const initial = name.slice(0, 1).toUpperCase();
+  try {
+    service.setMarkers([{ lng: fix.lng, lat: fix.lat, label: initial }]);
+    if (typeof service.centerOn === 'function') {
+      service.centerOn({ lat: fix.lat, lng: fix.lng }, 14);
+    }
+  } catch {
+    /* the note still states what was shared, even if the marker cannot draw */
+  }
+  showNote(
+    view,
+    t('sharing.mapNote', { name }) + ' · ' + ageLabel(item.fixAgeSeconds, { t }),
+  );
 }
 
 function onFailure(service, view, err) {
@@ -901,6 +951,24 @@ function assistantMount(searchSession, viewRef) {
   if (openState) setTimeout(() => openSheet(), 0);
 
   return wrapper;
+}
+
+// The `?share=<id>` deep-link value for one incoming share, read from the URL
+// query or the query after the hash, exactly like assistantParam reads its
+// own parameter.
+function shareParam() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('share');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('share');
+    }
+  } catch {
+    /* no URL, no share param */
+  }
+  return value && String(value).trim() ? String(value).trim() : null;
 }
 
 // The assistant deep-link value ('demo' | 'unavailable'), read from the URL

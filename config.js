@@ -25,6 +25,15 @@ const PORT = Number(process.env.PORT) || 3000;
 const PLATFORM_ORIGIN = (process.env.USERNODE_PLATFORM_ORIGIN || '')
   .replace(/\/+$/, '');
 
+// The platform's app-facing API, version-pinned (Phase 12F location sharing
+// asks it for the member roster and user lookups). Injected into staging and
+// production alike; unset for a plain local `node server.js`, where the
+// sharing stack answers its honest unavailable state instead.
+const PLATFORM_API_BASE = (process.env.USERNODE_PLATFORM_API_V1_URL
+  || process.env.USERNODE_PLATFORM_API_URL || '')
+  .trim()
+  .replace(/\/+$/, '');
+
 // The platform's RSA PUBLIC key (PEM). Containers hold only the public half,
 // so this app can verify a user's identity but cannot mint one.
 const JWT_PUBLIC_KEY = (process.env.USERNODE_JWT_PUBLIC_KEY || '')
@@ -196,6 +205,15 @@ const OFFLINE_SEARCH_ENABLED = !/^(false|0|no|off)$/i.test(
   String(process.env.OFFLINE_SEARCH_ENABLED || 'true').trim(),
 );
 
+// The location sharing operator switch (Phase 12F). Like the offline
+// switches it can only turn the feature off, never change which code runs:
+// with it off, every /api/sharing route answers the honest not_configured
+// 501 and the screen shows its unavailable state, in staging and production
+// alike.
+const LOCATION_SHARING_ENABLED = !/^(false|0|no|off)$/i.test(
+  String(process.env.LOCATION_SHARING_ENABLED || 'true').trim(),
+);
+
 // ── Live traffic (Phase 12D) ──────────────────────────────────────────────
 // The operator switch for the live traffic layer. It can only narrow the
 // live-traffic permission gate (traffic/provider-policy.js, blocker T1),
@@ -324,6 +342,7 @@ module.exports = {
   IS_STAGING,
   PORT,
   PLATFORM_ORIGIN,
+  PLATFORM_API_BASE,
   JWT_PUBLIC_KEY,
   APP_AUDIENCE,
   PUBLIC_DIR,
@@ -336,6 +355,7 @@ module.exports = {
   OFFLINE_ENABLED,
   OFFLINE_MAX_STORAGE_MB,
   OFFLINE_SEARCH_ENABLED,
+  LOCATION_SHARING_ENABLED,
   TRAFFIC_ENABLED,
   SEARCH_PROVIDER,
   PHOTON_URL,
