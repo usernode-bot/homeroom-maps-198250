@@ -40,6 +40,7 @@ const { createAnthropicProxy } = require('./assistant/provider');
 const { createAssistantRouter } = require('./assistant/routes');
 const { resolveOfflineConfig } = require('./offline');
 const { resolveOfflineSearchConfig } = require('./offline/search-config');
+const { resolveOfflineRoutingConfig } = require('./offline/routing-config');
 const { resolveTrafficConfig } = require('./traffic');
 
 const app = express();
@@ -244,6 +245,10 @@ app.get('/api/config', (_req, res) => {
   // searching already-stored regions is a device-local read. map.capabilities
   // .offline and features.offline keep their Phase 12A values untouched.
   const offlineSearch = resolveOfflineSearchConfig();
+  // Phase 12C adds the routing capability, default off: no verified engine
+  // ships in this build, so the block reports the honest disabled state and
+  // the client's offline routing gate fails closed on it.
+  const offlineRouting = resolveOfflineRoutingConfig();
   const weather = resolveWeatherConfig();
   const traffic = resolveTrafficConfig();
   res.json({
@@ -257,7 +262,7 @@ app.get('/api/config', (_req, res) => {
     searchProvider: searchApi.activeProviderName(),
     routing,
     placeProvider: placesApi.activeProviderName(),
-    offline: { ...offline, search: offlineSearch },
+    offline: { ...offline, search: offlineSearch, routing: offlineRouting },
     weather,
     traffic,
     features: {

@@ -15,6 +15,7 @@ import {
   TRAVEL_MODES,
   createDirectionsSession as createSessionCore,
 } from './routing-core.js';
+import { wrapFetchRoute } from './offline-routing.js';
 
 export { TRAVEL_MODES };
 
@@ -61,11 +62,17 @@ export async function fetchDirections(request, { signal } = {}) {
 // The Directions session bound to the real fetcher and the app's public
 // config. `overrides` lets tests inject fetchers/config without the core
 // leaking browser globals.
+//
+// The fetcher runs through the Phase 12C offline seam (offline-routing.js):
+// online answers pass through untouched, and only network-class (or timeout)
+// failures reach the device-local offline attempt. fetchDirections itself is
+// unchanged.
 export function createDirectionsSession({ config, ...overrides } = {}) {
+  const { fetchRoute: injectedFetchRoute, ...rest } = overrides;
   const capabilities = capabilitiesFromConfig(config);
   return createSessionCore({
-    fetchRoute: fetchDirections,
+    fetchRoute: wrapFetchRoute(injectedFetchRoute || fetchDirections, { config }),
     capabilities: capabilities || { modes: [], alternatives: false, waypoints: false },
-    ...overrides,
+    ...rest,
   });
 }

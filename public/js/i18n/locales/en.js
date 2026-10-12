@@ -516,6 +516,21 @@ export default {
   'offline.searchKindSuburb': 'Neighbourhood',
   'offline.searchKindPlace': 'Place',
 
+  // Offline routing (Phase 12C). Honest states only: no routing engine ships
+  // in this build, so none of these offers a route, a distance or a duration.
+  'offline.routeDisabledTitle': 'Offline routing is turned off',
+  'offline.routeDisabledBody':
+    'Routes cannot be calculated from downloaded areas while the switch is off. Online routing still works when you are connected.',
+  'offline.routeUnsupportedTitle': 'This browser cannot hold offline areas',
+  'offline.routeUnsupportedBody':
+    'Offline routing needs IndexedDB, which this browser does not provide.',
+  'offline.routeNoAreasTitle': 'No offline areas on this device',
+  'offline.routeNoAreasBody':
+    'Offline routing works only inside a downloaded area, and this device has none.',
+  'offline.routeNoRoadsTitle': 'Offline routing is not available in this version',
+  'offline.routeNoRoadsBody':
+    'Routes cannot be calculated from downloaded areas in this build. Online routing still works when you are connected.',
+
   // Location sharing (Phase 12F)
   'profile.sharingTitle': 'Location Sharing',
   'profile.sharingBody': 'Share where you are with people in this project, for a while you choose.',
@@ -578,6 +593,7 @@ export default {
   'sharing.signedOutTitle': 'Open Homeroom Maps inside Homeroom',
   'sharing.signedOutBody': 'Location Sharing needs a signed-in account.',
   'sharing.demoBanner': 'Staging demo. Fixed preview data, not a live share.',
+
   // weather (Phase 12G). The panel's whole vocabulary. With no authorized
   // weather provider (the W1 gate) every data state is unreachable, and the
   // panel leads with the honest unavailable state. Hand-written, and no em

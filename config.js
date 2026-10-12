@@ -205,6 +205,16 @@ const OFFLINE_SEARCH_ENABLED = !/^(false|0|no|off)$/i.test(
   String(process.env.OFFLINE_SEARCH_ENABLED || 'true').trim(),
 );
 
+// The offline ROUTING operator switch (Phase 12C). Default OFF: the B2
+// provider-rights gate is closed, no real region has ever been downloaded,
+// and the tile format's transportation layer is unverified for road data, so
+// no routing engine ships in this build. The switch defaults to off and can
+// only enable the capability for a build that can honor it; online routing
+// is unaffected either way.
+const OFFLINE_ROUTING_ENABLED = /^(true|1|yes|on)$/i.test(
+  String(process.env.OFFLINE_ROUTING_ENABLED || '').trim(),
+);
+
 // The location sharing operator switch (Phase 12F). Like the offline
 // switches it can only turn the feature off, never change which code runs:
 // with it off, every /api/sharing route answers the honest not_configured
@@ -355,6 +365,7 @@ module.exports = {
   OFFLINE_ENABLED,
   OFFLINE_MAX_STORAGE_MB,
   OFFLINE_SEARCH_ENABLED,
+  OFFLINE_ROUTING_ENABLED,
   LOCATION_SHARING_ENABLED,
   TRAFFIC_ENABLED,
   SEARCH_PROVIDER,
