@@ -1,0 +1,1219 @@
+From ece7d6f3e360dea19faaba198dd5633cf0d8454b Mon Sep 17 00:00:00 2001
+From: usernode-bot <usernode-bot@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 17:40:46 +0000
+Subject: [PATCH 1/4] Saved places: drop the Phase 7 client adapter that no
+ longer links (RC1, RC2)
+
+The assistant's save confirm now files the place through services/saved.js
+addPlace() into the requested list, and refuses a place without coordinates
+with a plain notice. services/saved-places.js and components/place/save-button.js
+imported createSavedPlacesService, which this PR removed from services/saved.js,
+so the browser module graph failed to link and no screen rendered. Adds
+tests/client-module-graph.test.js, which fails on any such link error.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ README.md                                 |   5 +-
+ dapp.json                                 |   1 -
+ public/js/components/place/save-button.js | 101 --------------
+ public/js/i18n/locales/en.js              |   1 +
+ public/js/i18n/locales/id.js              |   1 +
+ public/js/screens/home.js                 |  30 ++--
+ public/js/services/assistant.js           |   2 +-
+ public/js/services/saved-places.js        | 159 ----------------------
+ tests/client-module-graph.test.js         |  52 +++++++
+ 9 files changed, 74 insertions(+), 278 deletions(-)
+ delete mode 100644 public/js/components/place/save-button.js
+ delete mode 100644 public/js/services/saved-places.js
+ create mode 100644 tests/client-module-graph.test.js
+
+diff --git a/README.md b/README.md
+index c77431a..095e975 100644
+--- a/README.md
++++ b/README.md
+@@ -68,8 +68,9 @@ A global map and location platform, built together with its community.
+   from `/api/config`, `PLACE_PROVIDER` unset): every per-place field the
+   search data does not carry renders an honest "Not available" state, and
+   `/api/places*` answers 501 rather than serving fabricated POI data. The
+-  SavedPlacesAdapter interface (`public/js/services/saved.js`) is unchanged;
+-  Phase 7 supplies the real server-backed adapter that implements it.
++  browser half of the saved API is `public/js/services/saved.js`; the old
++  flat SavedPlacesAdapter (save/unsave/isSaved/list) is gone, because saving
++  now always files a place into a list.
+ - **Saved places and lists (Phase 7)** — signed-in people save real places
+   from search or the Place Detail view and keep them in lists. Every account
+   starts with four built-in lists (Favorites, Want to Visit, Travel,
+diff --git a/dapp.json b/dapp.json
+index eac9ccb..3e1425d 100644
+--- a/dapp.json
++++ b/dapp.json
+@@ -326,7 +326,6 @@
+         "public/js/components/place/**",
+         "public/js/app.js",
+         "public/js/services/saved.js",
+-        "public/js/services/saved-places.js",
+         "public/js/router.js",
+         "public/js/i18n/**",
+         "saved/**"
+diff --git a/public/js/components/place/save-button.js b/public/js/components/place/save-button.js
+deleted file mode 100644
+index 5b31c33..0000000
+--- a/public/js/components/place/save-button.js
++++ /dev/null
+@@ -1,101 +0,0 @@
+-// Save button — the one control for saving and unsaving a place.
+-//
+-// It reflects the REAL state: `isSaved` asks the server for this user and this
+-// place, and every press re-renders from what the server answered. Loading,
+-// busy, saved and error are distinct states; nothing here shows a saved place
+-// the server did not confirm.
+-//
+-// The button does not own any list UI: filing a place into a list is the list
+-// picker's job (components/saved/list-picker.js), presented from the same row.
+-import { el } from '../dom.js';
+-import { icon } from '../icons.js';
+-import { spinner } from '../loading.js';
+-import { t } from '../../i18n/index.js';
+-import { savedPlaces } from '../../services/saved-places.js';
+-
+-export function createSaveButton(place, { initiallySaved, onChange, onError } = {}) {
+-  // 'unknown' until the first real answer; `initiallySaved` (a Set the screen
+-  // already fetched) skips the per-place round trip.
+-  let state = typeof initiallySaved === 'boolean' ? (initiallySaved ? 'saved' : 'idle') : 'loading';
+-  let busy = false;
+-
+-  const node = el('button', {
+-    type: 'button',
+-    class:
+-      'un-touch-target inline-flex items-center gap-1.5 rounded-pill border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-60',
+-    dataset: { saveButton: place.id },
+-  });
+-
+-  function paint() {
+-    const saved = state === 'saved';
+-    node.replaceChildren(
+-      busy || state === 'loading'
+-        ? spinner()
+-        : icon(saved ? 'check' : 'bookmark', { class: 'h-4 w-4' }),
+-      el('span', {
+-        text:
+-          state === 'loading'
+-            ? t('saved.checking')
+-            : busy
+-              ? t('saved.saving')
+-              : saved
+-                ? t('saved.saved')
+-                : t('saved.save'),
+-      }),
+-    );
+-    node.setAttribute('aria-pressed', saved ? 'true' : 'false');
+-    node.setAttribute('aria-label', saved ? t('saved.unsaveLabel') : t('saved.saveLabel'));
+-    node.disabled = busy || state === 'loading';
+-  }
+-
+-  function fail(err) {
+-    state = 'error';
+-    paint();
+-    if (onError) onError(err);
+-    else if (window.unNative && window.unNative.toast) {
+-      window.unNative.toast((err && err.message) || t('saved.saveError'), { priority: true });
+-    }
+-    // Return to a usable control: the next press retries.
+-    setTimeout(() => {
+-      if (state === 'error') {
+-        state = 'idle';
+-        paint();
+-      }
+-    }, 1200);
+-  }
+-
+-  async function check() {
+-    try {
+-      const saved = await savedPlaces.isSaved(place.id);
+-      state = saved ? 'saved' : 'idle';
+-    } catch {
+-      // A failed check must not claim "not saved": show the idle action so the
+-      // person can try again, without asserting a state we did not confirm.
+-      state = 'idle';
+-    }
+-    paint();
+-  }
+-
+-  async function toggle() {
+-    if (busy) return;
+-    busy = true;
+-    paint();
+-    const wasSaved = state === 'saved';
+-    try {
+-      if (wasSaved) await savedPlaces.unsave(place.id);
+-      else await savedPlaces.save(place);
+-      busy = false;
+-      state = wasSaved ? 'idle' : 'saved';
+-      paint();
+-      if (onChange) onChange(state === 'saved');
+-    } catch (err) {
+-      busy = false;
+-      fail(err);
+-    }
+-  }
+-
+-  node.addEventListener('click', toggle);
+-  paint();
+-  if (state === 'loading') check();
+-  return node;
+-}
+diff --git a/public/js/i18n/locales/en.js b/public/js/i18n/locales/en.js
+index b9a581c..e67e261 100644
+--- a/public/js/i18n/locales/en.js
++++ b/public/js/i18n/locales/en.js
+@@ -515,6 +515,7 @@ export default {
+   'assistant.confirm': 'Confirm',
+   'assistant.notNow': 'Not now',
+   'assistant.doneNote': 'Done.',
++  'assistant.saveNeedsLocation': 'This place has no location, so it cannot be saved to a list.',
+   'assistant.actionFailed': 'That action could not be completed. Try again.',
+   'assistant.action.save': 'Save {name} to {list}',
+   'assistant.action.addTrip': 'Add {name} to your trip',
+diff --git a/public/js/i18n/locales/id.js b/public/js/i18n/locales/id.js
+index 921568f..d6e223e 100644
+--- a/public/js/i18n/locales/id.js
++++ b/public/js/i18n/locales/id.js
+@@ -514,6 +514,7 @@ export default {
+   'assistant.confirm': 'Konfirmasi',
+   'assistant.notNow': 'Nanti saja',
+   'assistant.doneNote': 'Selesai.',
++  'assistant.saveNeedsLocation': 'Tempat ini tidak punya lokasi, jadi tidak bisa disimpan ke daftar.',
+   'assistant.actionFailed': 'Tindakan itu tidak bisa diselesaikan. Coba lagi.',
+   'assistant.action.save': 'Simpan {name} ke {list}',
+   'assistant.action.addTrip': 'Tambahkan {name} ke perjalananmu',
+diff --git a/public/js/screens/home.js b/public/js/screens/home.js
+index 5c0c533..5756e72 100644
+--- a/public/js/screens/home.js
++++ b/public/js/screens/home.js
+@@ -30,7 +30,7 @@ import { createWeatherPanel } from '../components/weather/weather-panel.js';
+ import { setWeatherCapability, requestWeather } from '../services/weather.js';
+ import { present } from '../components/surface.js';
+ import { createAssistant, mapContext, fetchStatus, normalizeAction } from '../services/assistant.js';
+-import { savedPlaces } from '../services/saved-places.js';
++import { addPlace, hasCoords, placeToSnapshot } from '../services/saved.js';
+ import { addItem as addTripItem } from '../services/trips.js';
+ import { fetchConfig } from '../api.js';
+ import { getState, setState } from '../state.js';
+@@ -688,25 +688,27 @@ function buildMapContext(viewRef, selected) {
+ //      viewer. This is what stops a tampered client from executing an
+ //      unlisted tool or another person's trip. /act mutates nothing.
+ //   2. Issue the write through the EXISTING domain service: save goes to
+-//      /api/saved/places (via savedPlaces.save), add-to-trip to
+-//      /api/trips/.../items. No new write endpoint is introduced.
++//      /api/saved/lists/<list>/items (via saved.addPlace), add-to-trip to
++//      /api/trips/.../items. No new write endpoint is introduced. A saved
++//      item needs coordinates, so a place without them is refused here with
++//      a plain notice instead of a request the server would reject.
+ async function confirmWrite(action) {
+   const answer = await normalizeAction(action);
+   const validated = answer && answer.action && answer.action.tool ? answer.action : action;
+   const args = (validated && validated.args) || {};
+   if (validated.tool === 'save_place') {
+     const place = args.place || {};
+-    await savedPlaces.save(
+-      {
+-        id: place.id,
+-        name: place.name,
+-        category: place.category || null,
+-        address: place.address || null,
+-        coordinates: place.lat != null && place.lng != null ? { lat: place.lat, lon: place.lng } : null,
+-        dataSource: 'assistant',
+-      },
+-      { list: args.listRef || 'favorites' },
+-    );
++    const model = {
++      id: place.id,
++      name: place.name,
++      category: place.category || null,
++      subcategory: place.subcategory || null,
++      address: place.address || null,
++      coordinates: place.lat != null && place.lng != null ? { lat: place.lat, lon: place.lng } : null,
++      dataSource: 'assistant',
++    };
++    if (!hasCoords(model)) throw new Error(t('assistant.saveNeedsLocation'));
++    await addPlace(args.listRef || 'favorites', placeToSnapshot(model));
+     return { notice: t('assistant.doneNote') };
+   }
+   if (validated.tool === 'add_trip_item') {
+diff --git a/public/js/services/assistant.js b/public/js/services/assistant.js
+index 71b9824..3f040c8 100644
+--- a/public/js/services/assistant.js
++++ b/public/js/services/assistant.js
+@@ -12,7 +12,7 @@
+ //      that never becomes a fact (see assistant/prompt.js).
+ //
+ // The confirmed WRITE is never issued from here: the screen calls the existing
+-// domain services (services/saved-places.js, services/trips.js) directly after
++// domain services (services/saved.js, services/trips.js) directly after
+ // a confirmation, so the assistant adds no write endpoint.
+ import { apiGet, apiSend } from '../api.js';
+ import { createAssistantSession } from './assistant-core.js';
+diff --git a/public/js/services/saved-places.js b/public/js/services/saved-places.js
+deleted file mode 100644
+index b036ed9..0000000
+--- a/public/js/services/saved-places.js
++++ /dev/null
+@@ -1,159 +0,0 @@
+-// Saved places service (Phase 7) — the browser half of /api/saved.
+-//
+-// Two layers live here, deliberately:
+-//
+-//   1. `serverAdapter` implements the SavedPlacesAdapter contract the repo
+-//      already documented (services/saved.js): save / unsave / isSaved / list.
+-//      Wiring it through createSavedPlacesService() is the TODO that module
+-//      left for this phase, so the contract and its test are unchanged.
+-//   2. The list operations (default and custom lists) the Saved screen and the
+-//      Profile integration need.
+-//
+-// A saved place references a REAL place id — the id the search stack already
+-// gives every result (services/places-model.js). Nothing here invents a place
+-// and nothing fabricates a saved list: every function returns exactly what the
+-// server answered.
+-import { apiGet, apiSend } from '../api.js';
+-import { createSavedPlacesService } from './saved.js';
+-
+-// The four default list slugs, mirroring saved/model.js. The client uses them
+-// for the picker's ordering and for the honest "these always exist" copy;
+-// the server is still the authority that seeds them.
+-export const DEFAULT_LIST_SLUGS = ['favorites', 'want_to_visit', 'travel', 'restaurants'];
+-
+-// Map one place (the app's Place model, services/places-model.js) onto the
+-// reference the API stores. Only real values are sent; absent ones stay null.
+-export function placeRef(place) {
+-  if (!place || typeof place !== 'object' || !place.id) return null;
+-  const coords = place.coordinates || {};
+-  const lat = Number(coords.lat);
+-  const lon = Number(coords.lon);
+-  return {
+-    id: String(place.id),
+-    name: typeof place.name === 'string' && place.name ? place.name : null,
+-    address: typeof place.address === 'string' && place.address ? place.address : null,
+-    category: typeof place.category === 'string' && place.category ? place.category : null,
+-    subcategory: typeof place.subcategory === 'string' && place.subcategory ? place.subcategory : null,
+-    lat: Number.isFinite(lat) ? lat : null,
+-    lng: Number.isFinite(lon) ? lon : null,
+-    source: typeof place.dataSource === 'string' && place.dataSource ? place.dataSource : null,
+-  };
+-}
+-
+-// A stored saved place -> the app's Place model, so the ONE reusable Place
+-// Card renders it with the same gating logic as every other surface. Every
+-// optional field is present and null when the saved data does not carry it —
+-// nothing is invented to fill a card.
+-export function savedToPlace(saved) {
+-  if (!saved || typeof saved !== 'object' || !saved.id) return null;
+-  const lat = Number(saved.lat);
+-  const lng = Number(saved.lng);
+-  return {
+-    id: String(saved.id),
+-    name: saved.name || '',
+-    localizedNames: null,
+-    category: saved.category || null,
+-    subcategory: saved.subcategory || null,
+-    coordinates: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lon: lng } : null,
+-    address: saved.address || null,
+-    country: null,
+-    phone: null,
+-    website: null,
+-    openingHours: null,
+-    rating: null,
+-    photos: [],
+-    businessStatus: null,
+-    verificationStatus: null,
+-    dataSource: saved.source || 'unknown',
+-  };
+-}
+-
+-// ---- the SavedPlacesAdapter contract, bound to the server ----
+-
+-export const serverAdapter = {
+-  // Save a place. `list` is optional; the screen's one-tap save files a new
+-  // place into Favorites, which is a real default list, not a guess.
+-  async save(place, { list = 'favorites' } = {}) {
+-    const ref = placeRef(place);
+-    if (!ref) throw new Error('save() needs a place with an id.');
+-    return apiSend('POST', '/api/saved/places', { place: ref, list });
+-  },
+-  async unsave(id) {
+-    return apiSend('DELETE', `/api/saved/places/${encodeURIComponent(id)}`);
+-  },
+-  async isSaved(id) {
+-    const body = await apiGet(`/api/saved/places/${encodeURIComponent(id)}/status`);
+-    return Boolean(body && body.saved);
+-  },
+-  async list() {
+-    const body = await apiGet('/api/saved/places');
+-    return Array.isArray(body && body.places) ? body.places : [];
+-  },
+-};
+-
+-// The app's wired saved-places service. The contract validation in
+-// services/saved.js runs here, at the wiring site.
+-export const savedPlaces = createSavedPlacesService(serverAdapter);
+-
+-// ---- lists ----
+-
+-export function fetchOverview() {
+-  return apiGet('/api/saved');
+-}
+-
+-export async function fetchLists() {
+-  const body = await apiGet('/api/saved/lists');
+-  return Array.isArray(body && body.lists) ? body.lists : [];
+-}
+-
+-export async function fetchList(id) {
+-  return apiGet(`/api/saved/lists/${encodeURIComponent(id)}`);
+-}
+-
+-export async function fetchPlaces() {
+-  const body = await apiGet('/api/saved/places');
+-  return Array.isArray(body && body.places) ? body.places : [];
+-}
+-
+-// Create a custom list. The server's per-field message reaches the caller as
+-// an ApiError with .fields, which the form shows.
+-export function createList(name, description) {
+-  return apiSend('POST', '/api/saved/lists', { name, description });
+-}
+-
+-export function renameList(id, name) {
+-  return apiSend('PATCH', `/api/saved/lists/${encodeURIComponent(id)}`, { name });
+-}
+-
+-export function deleteList(id) {
+-  return apiSend('DELETE', `/api/saved/lists/${encodeURIComponent(id)}`);
+-}
+-
+-// `listRef` is a default slug or a numeric id. `place` may be a full Place
+-// (which is saved along the way) or `placeId` for one already saved.
+-export function addToList(listRef, place) {
+-  const ref = placeRef(place);
+-  const body = ref ? { place: ref } : { placeId: place && place.id };
+-  return apiSend('POST', `/api/saved/lists/${encodeURIComponent(listRef)}/items`, body);
+-}
+-
+-export function removeFromList(listRef, placeId) {
+-  return apiSend('DELETE', `/api/saved/lists/${encodeURIComponent(listRef)}/items`, { placeId });
+-}
+-
+-// Which of the person's lists a place is already in (real membership, read
+-// from the saved list itself). Returns a Set of list ids as strings.
+-export async function listsContaining(placeId) {
+-  const lists = await fetchLists();
+-  const memberships = await Promise.all(
+-    lists.map(async (list) => {
+-      try {
+-        const detail = await fetchList(list.id);
+-        return (detail.items || []).some((item) => item.id === placeId) ? String(list.id) : null;
+-      } catch {
+-        return null;
+-      }
+-    }),
+-  );
+-  return new Set(memberships.filter(Boolean));
+-}
+diff --git a/tests/client-module-graph.test.js b/tests/client-module-graph.test.js
+new file mode 100644
+index 0000000..07c5ec4
+--- /dev/null
++++ b/tests/client-module-graph.test.js
+@@ -0,0 +1,52 @@
++// The browser module graph links: every static import under public/js names
++// an export its target module really provides, and every imported file
++// exists.
++//
++// The app's screens load through ONE static graph rooted at public/js/app.js,
++// so a single import of a name a module no longer exports stops the browser
++// before anything renders, on every screen at once. Unit tests that import a
++// module directly never notice: they never load the importer. This test
++// imports every module (app.js first) and fails on a link or parse error.
++// Evaluation errors such as "window is not defined" are expected here, since
++// Node has no DOM, and they only happen after the whole graph has linked.
++'use strict';
++
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const ROOT = path.join(__dirname, '..', 'public', 'js');
++
++function modules(dir) {
++  const out = [];
++  for (const name of fs.readdirSync(dir).sort()) {
++    const full = path.join(dir, name);
++    if (fs.statSync(full).isDirectory()) out.push(...modules(full));
++    else if (name.endsWith('.js')) out.push(full);
++  }
++  return out;
++}
++
++// A link or parse failure, as opposed to an error thrown while evaluating.
++function isLinkError(err) {
++  return err instanceof SyntaxError || (err && err.code === 'ERR_MODULE_NOT_FOUND');
++}
++
++test('every browser module links, starting from app.js', async () => {
++  const entry = path.join(ROOT, 'app.js');
++  const files = [entry, ...modules(ROOT).filter((f) => f !== entry)];
++  assert.ok(files.length > 50, 'expected to find the app modules under public/js');
++  const broken = [];
++  for (const file of files) {
++    try {
++      await import(pathToFileURL(file).href);
++    } catch (err) {
++      if (isLinkError(err)) {
++        broken.push(`${path.relative(ROOT, file)}: ${String(err.message).split('\n')[0]}`);
++      }
++    }
++  }
++  assert.deepEqual(broken, [], `modules that fail to link:\n${broken.join('\n')}`);
++});
+-- 
+2.39.5
+
+
+From cabd044ff98b0ac2de6c2e8c73bc1dae40d0b51a Mon Sep 17 00:00:00 2001
+From: usernode-bot <usernode-bot@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 17:42:49 +0000
+Subject: [PATCH 2/4] Saved lists: stable default-list slugs and a
+ coordinates-only assistant save (RC2, RC3)
+
+saved_lists gains system_key in place (ADD COLUMN IF NOT EXISTS plus a
+partial unique index per owner); the four defaults are created with it.
+GET /lists/:id and POST /lists/:id/items accept favorites, want_to_visit,
+travel or restaurants and resolve them among the viewer's own lists only,
+so #/saved?list=favorites and the assistant's listRef work again and keep
+working after a rename. Cards carry systemKey. The save_place tool schema
+requires lat and lng, which a saved item needs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ assistant/actions.js            |  2 +-
+ saved/model.js                  | 13 ++++--
+ saved/store.js                  | 36 ++++++++++++--
+ tests/assistant.actions.test.js |  9 ++++
+ tests/saved.model.test.js       |  6 +++
+ tests/saved.postgres.test.js    | 83 +++++++++++++++++++++++++++++++++
+ 6 files changed, 139 insertions(+), 10 deletions(-)
+
+diff --git a/assistant/actions.js b/assistant/actions.js
+index 3817ee8..3c660f3 100644
+--- a/assistant/actions.js
++++ b/assistant/actions.js
+@@ -250,7 +250,7 @@ const ACTION_DEFINITIONS = [
+             lat: { type: 'number' },
+             lng: { type: 'number' },
+           },
+-          required: ['id', 'name'],
++          required: ['id', 'name', 'lat', 'lng'],
+         },
+         listRef: {
+           type: 'string',
+diff --git a/saved/model.js b/saved/model.js
+index c5b84cb..ea1935b 100644
+--- a/saved/model.js
++++ b/saved/model.js
+@@ -54,12 +54,16 @@ const EMOJI_SET = new Set(EMOJIS);
+ 
+ // The four roadmap-P7 defaults, created lazily the first time a person opens
+ // their lists (production behaviour for every user, never staging seeding).
++// `key` is the stable system_key Phase 7 gave each default: it never changes
++// when a person renames the list, so a link or the assistant can name
++// "favorites" and still reach it.
+ const DEFAULT_LISTS = [
+-  { name: 'Favorites', emoji: '⭐' },
+-  { name: 'Want to Visit', emoji: '🧭' },
+-  { name: 'Travel', emoji: '✈️' },
+-  { name: 'Restaurants', emoji: '🍴' },
++  { key: 'favorites', name: 'Favorites', emoji: '⭐' },
++  { key: 'want_to_visit', name: 'Want to Visit', emoji: '🧭' },
++  { key: 'travel', name: 'Travel', emoji: '✈️' },
++  { key: 'restaurants', name: 'Restaurants', emoji: '🍴' },
+ ];
++const DEFAULT_LIST_KEYS = DEFAULT_LISTS.map((d) => d.key);
+ 
+ // A search result's id is a provider id, or a "lat,lon" fallback when the
+ // provider gave none (see places-model.js placeFromSearchResult). Only the
+@@ -250,6 +254,7 @@ module.exports = {
+   LIMITS,
+   EMOJIS,
+   DEFAULT_LISTS,
++  DEFAULT_LIST_KEYS,
+   isOwner,
+   canWrite,
+   canView,
+diff --git a/saved/store.js b/saved/store.js
+index e6d597d..b405c5c 100644
+--- a/saved/store.js
++++ b/saved/store.js
+@@ -31,6 +31,13 @@ CREATE TABLE IF NOT EXISTS saved_lists (
+ CREATE INDEX IF NOT EXISTS saved_lists_owner_idx ON saved_lists (owner_id, created_at);
+ CREATE INDEX IF NOT EXISTS saved_lists_visibility_idx ON saved_lists (visibility, updated_at DESC);
+ COMMENT ON TABLE saved_lists IS 'staging:private';
++-- The stable slug of a default list (Phase 7's system_key), added in place
++-- so a database that already has this table gains it on the next boot. It
++-- survives a rename, and at most one of a person's lists holds each slug.
++ALTER TABLE saved_lists ADD COLUMN IF NOT EXISTS system_key TEXT
++  CHECK (system_key IN ('favorites','want_to_visit','travel','restaurants'));
++CREATE UNIQUE INDEX IF NOT EXISTS saved_lists_owner_system_key_uniq
++  ON saved_lists (owner_id, system_key) WHERE system_key IS NOT NULL;
+ 
+ CREATE TABLE IF NOT EXISTS saved_list_items (
+   id BIGSERIAL PRIMARY KEY,
+@@ -237,6 +244,7 @@ function toCard(row, viewer) {
+     name: row.name,
+     emoji: row.emoji,
+     visibility: row.visibility,
++    systemKey: row.system_key || null,
+     owner: { id: row.owner_id, username: row.owner_username },
+     itemCount: row.item_count || 0,
+     createdAt: iso(row.created_at),
+@@ -366,14 +374,32 @@ SELECT l.*,
+       if (!rows[0]) return;
+       for (const def of model.DEFAULT_LISTS) {
+         await client.query(
+-          `INSERT INTO saved_lists (owner_id, owner_username, name, emoji, visibility)
+-           VALUES ($1, $2, $3, $4, 'private')`,
+-          [viewer.id, viewer.username, def.name, def.emoji],
++          `INSERT INTO saved_lists (owner_id, owner_username, name, emoji, visibility, system_key)
++           VALUES ($1, $2, $3, $4, 'private', $5)`,
++          [viewer.id, viewer.username, def.name, def.emoji, def.key],
+         );
+       }
+     });
+   }
+ 
++  // A list reference from a URL or the assistant: a numeric id, or one of
++  // the four default slugs. A slug names only the viewer's OWN default list,
++  // never anyone else's, and is answered "not found" once that list has been
++  // deleted. The defaults are ensured first, exactly as listMine does, so a
++  // first visit to ?list=favorites opens the list a first visit to the lists
++  // would have created.
++  async function resolveListId(viewer, raw) {
++    const slug = raw == null ? '' : String(raw);
++    if (!model.DEFAULT_LIST_KEYS.includes(slug)) return parseId(raw);
++    await ensureDefaults(viewer);
++    const { rows } = await pool.query(
++      'SELECT id FROM saved_lists WHERE owner_id = $1 AND system_key = $2',
++      [viewer.id, slug],
++    );
++    if (!rows[0]) throw new SavedError('not_found', 'That list does not exist.', { status: 404 });
++    return String(rows[0].id);
++  }
++
+   async function listMine(viewer, rawQuery) {
+     await ensureDefaults(viewer);
+     const q = model.parsePageQuery(rawQuery);
+@@ -412,7 +438,7 @@ SELECT l.*,
+   }
+ 
+   async function getDetail(viewer, rawId, { key = null } = {}) {
+-    const id = parseId(rawId);
++    const id = await resolveListId(viewer, rawId);
+     const row = await readList(pool, viewer, id, { key });
+     const isOwner = model.isOwner(viewer, toList(row));
+     const { rows: items } = await pool.query(
+@@ -512,7 +538,7 @@ SELECT l.*,
+   }
+ 
+   async function addItem(viewer, rawListId, rawBody) {
+-    const listId = parseId(rawListId);
++    const listId = await resolveListId(viewer, rawListId);
+     const body = rawBody && typeof rawBody === 'object' ? rawBody : {};
+     const place = model.validatePlace(body.place);
+     const note = model.validateNote(body.note);
+diff --git a/tests/assistant.actions.test.js b/tests/assistant.actions.test.js
+index dfe998d..4df691a 100644
+--- a/tests/assistant.actions.test.js
++++ b/tests/assistant.actions.test.js
+@@ -7,6 +7,7 @@
+ const test = require('node:test');
+ const assert = require('node:assert/strict');
+ const {
++  ACTION_DEFINITIONS,
+   ActionError,
+   ACTION_TOOLS,
+   validateActionShape,
+@@ -156,3 +157,11 @@ test('describeAction produces a short English summary', () => {
+   assert.equal(describeAction('save_place', { place: { name: 'Cafe' }, listRef: 'travel' }), 'Save Cafe to travel');
+   assert.equal(describeAction('open_community', { tab: 'reports' }), 'Open community reports');
+ });
++
++// A saved list item needs coordinates (saved/model.js validatePlace), so the
++// tool the model sees must ask for them rather than propose a save the
++// server would refuse.
++test('save_place asks the model for coordinates', () => {
++  const def = ACTION_DEFINITIONS.find((d) => d.name === 'save_place');
++  assert.deepEqual(def.input_schema.properties.place.required, ['id', 'name', 'lat', 'lng']);
++});
+diff --git a/tests/saved.model.test.js b/tests/saved.model.test.js
+index 4ba178b..c43f679 100644
+--- a/tests/saved.model.test.js
++++ b/tests/saved.model.test.js
+@@ -199,6 +199,12 @@ test('share tokens are 32 hex characters and unique', () => {
+   assert.notEqual(a, b);
+ });
+ 
++test('the default lists carry the four stable Phase 7 slugs, in order', () => {
++  assert.deepEqual(model.DEFAULT_LISTS.map((d) => d.key),
++    ['favorites', 'want_to_visit', 'travel', 'restaurants']);
++  assert.deepEqual(model.DEFAULT_LIST_KEYS, model.DEFAULT_LISTS.map((d) => d.key));
++});
++
+ test('the four default lists exist with palette emojis', () => {
+   assert.equal(model.DEFAULT_LISTS.length, 4);
+   for (const d of model.DEFAULT_LISTS) {
+diff --git a/tests/saved.postgres.test.js b/tests/saved.postgres.test.js
+index 5647961..4324b28 100644
+--- a/tests/saved.postgres.test.js
++++ b/tests/saved.postgres.test.js
+@@ -39,6 +39,8 @@ const USERS = {
+   alice: { id: 201, username: 'alice' },
+   bob: { id: 202, username: 'bob' },
+   carol: { id: 203, username: 'carol' },
++  dave: { id: 204, username: 'dave' },
++  erin: { id: 205, username: 'erin' },
+ };
+ 
+ const BAKERY = {
+@@ -459,3 +461,84 @@ test('staging seed is idempotent, obviously fake, private, and never about the v
+   assert.equal(demo.body.items[0].commentCount, 1);
+   assert.deepEqual(demo.body.suggestions, []); // not the owner: no suggestions surfaced
+ });
++
++test('default lists answer to their slug: the viewer\'s own only, through renames, 404 once deleted', { skip }, async () => {
++  const mine = await call('GET', '/lists?view=mine', { as: 'dave' });
++  assert.deepEqual(mine.body.items.map((c) => c.systemKey),
++    ['favorites', 'want_to_visit', 'travel', 'restaurants']);
++
++  // A first visit straight to the slug works for someone who has never
++  // opened their lists: the defaults are ensured first.
++  const erinFav = await call('GET', '/lists/favorites', { as: 'erin' });
++  assert.equal(erinFav.status, 200);
++  assert.equal(erinFav.body.list.name, 'Favorites');
++  assert.equal(erinFav.body.list.systemKey, 'favorites');
++  assert.equal(erinFav.body.list.owner.username, 'erin');
++  const erinMine = await call('GET', '/lists?view=mine', { as: 'erin' });
++  assert.equal(erinMine.body.items.length, 4); // not a second set
++
++  const daveFav = await call('GET', '/lists/favorites', { as: 'dave' });
++  assert.equal(daveFav.body.list.owner.username, 'dave');
++  assert.notEqual(daveFav.body.list.id, erinFav.body.list.id);
++
++  // The slug survives a rename.
++  const renamed = await call('PATCH', `/lists/${daveFav.body.list.id}`, { as: 'dave', body: { name: 'Dave loves' } });
++  assert.equal(renamed.status, 200);
++  const again = await call('GET', '/lists/favorites', { as: 'dave' });
++  assert.equal(again.body.list.id, daveFav.body.list.id);
++  assert.equal(again.body.list.name, 'Dave loves');
++
++  // Adding through the slug files into the viewer's own list only.
++  const add = await call('POST', '/lists/want_to_visit/items', { as: 'erin', body: { place: ESPRESSO } });
++  assert.equal(add.status, 200);
++  const erinWant = await call('GET', '/lists/want_to_visit', { as: 'erin' });
++  assert.equal(erinWant.body.items.length, 1);
++  const daveWant = await call('GET', '/lists/want_to_visit', { as: 'dave' });
++  assert.equal(daveWant.body.items.length, 0);
++
++  // A deleted default is gone for its slug too, and nothing recreates it.
++  const travel = mine.body.items.find((c) => c.systemKey === 'travel');
++  assert.equal((await call('DELETE', `/lists/${travel.id}`, { as: 'dave' })).status, 200);
++  assert.equal((await call('GET', '/lists/travel', { as: 'dave' })).status, 404);
++  assert.equal((await call('POST', '/lists/travel/items', { as: 'dave', body: { place: BAKERY } })).status, 404);
++  assert.equal((await call('GET', '/lists?view=mine', { as: 'dave' })).body.items.length, 3);
++
++  // Only the four slugs are slugs; a custom list has none.
++  assert.equal((await call('GET', '/lists/everything', { as: 'dave' })).status, 404);
++  const custom = await call('POST', '/lists', { as: 'dave', body: { name: 'Dave custom' } });
++  assert.equal(custom.body.systemKey, null);
++});
++
++test('a share key reads a link list and never writes it', { skip }, async () => {
++  const created = await call('POST', '/lists', { as: 'dave', body: { name: 'Dave shared' } });
++  const id = created.body.id;
++  const token = (await call('PATCH', `/lists/${id}`, { as: 'dave', body: { visibility: 'link' } })).body.shareToken;
++  assert.ok(token);
++  const item = await call('POST', `/lists/${id}/items`, { as: 'dave', body: { place: BAKERY } });
++  assert.equal(item.status, 200);
++
++  const read = await call('GET', `/lists/${id}`, { as: 'erin', key: token });
++  assert.equal(read.status, 200);
++  assert.equal(read.body.viewer.canWrite, false);
++
++  const writes = [
++    ['PATCH', `/lists/${id}`, { name: 'Taken over' }],
++    ['DELETE', `/lists/${id}`, undefined],
++    ['POST', `/lists/${id}/items`, { place: ESPRESSO }],
++    ['PATCH', `/lists/${id}/items/${item.body.id}`, { note: 'mine now' }],
++    ['DELETE', `/lists/${id}/items/${item.body.id}`, undefined],
++  ];
++  for (const [method, path, body] of writes) {
++    const res = await call(method, path, { as: 'erin', key: token, body });
++    assert.ok(res.status === 403 || res.status === 404, `${method} ${path} answered ${res.status}`);
++  }
++  const after = await call('GET', `/lists/${id}`, { as: 'dave' });
++  assert.equal(after.body.list.name, 'Dave shared');
++  assert.equal(after.body.items.length, 1);
++  assert.equal(after.body.items[0].note, null);
++
++  // A private list is "not found" to anyone else, key or no key.
++  const priv = await call('POST', '/lists', { as: 'dave', body: { name: 'Dave private' } });
++  assert.equal((await call('GET', `/lists/${priv.body.id}`, { as: 'erin' })).status, 404);
++  assert.equal((await call('GET', `/lists/${priv.body.id}`, { as: 'erin', key: token })).status, 404);
++});
+-- 
+2.39.5
+
+
+From dde26ed44d135d3ff483c0e6a3582c1bbbbd7f52 Mon Sep 17 00:00:00 2001
+From: usernode-bot <usernode-bot@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 17:43:17 +0000
+Subject: [PATCH 3/4] Saved screen: keep the Phase 7 host marker and empty
+ state, show list descriptions (RC3)
+
+The screen host also carries data-saved-host, which the saved.lists check
+selects. When every one of the viewer's lists is empty the Your lists view
+shows the existing "Nothing saved yet" empty state under them. A list's
+description, when it has one, shows read-only under its title.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ public/js/screens/saved.js | 20 +++++++++++++++-----
+ 1 file changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/public/js/screens/saved.js b/public/js/screens/saved.js
+index d399016..265cd97 100644
+--- a/public/js/screens/saved.js
++++ b/public/js/screens/saved.js
+@@ -36,7 +36,7 @@ export async function render(ctx) {
+   const key = params.get('key') || null;
+   const view = params.get('view') === 'public' ? 'public' : 'mine';
+ 
+-  const host = el('div', { class: 'flex flex-col gap-4', dataset: { savedScreen: 'true' } });
++  const host = el('div', { class: 'flex flex-col gap-4', dataset: { savedScreen: 'true', savedHost: 'true' } });
+   ctx.content.replaceChildren(host);
+ 
+   // Signed out (standalone, offline, no platform token): say so plainly.
+@@ -176,10 +176,17 @@ export async function render(ctx) {
+       );
+       return;
+     }
+-    listHost.replaceChildren(
+-      el('div', { class: 'flex flex-col gap-2' },
+-        lists.map((list) => listRow(list, { owner: true, onClick: () => go({ list: list.id, view: 'mine' }) }))),
+-    );
++    // Lists exist (the four defaults always do at first) but hold nothing:
++    // say so under them, from the real counts, rather than leave a column of
++    // "0 places" rows to speak for itself.
++    const nothingSaved = lists.every((list) => !list.itemCount);
++    const rows = el('div', { class: 'flex flex-col gap-2' },
++      lists.map((list) => listRow(list, { owner: true, onClick: () => go({ list: list.id, view: 'mine' }) })));
++    if (nothingSaved) {
++      listHost.replaceChildren(rows, emptyState({ title: t('saved.emptyTitle'), description: t('saved.emptyBody') }));
++    } else {
++      listHost.replaceChildren(rows);
++    }
+   }
+ 
+   async function showPublic(listHost) {
+@@ -294,6 +301,9 @@ export async function render(ctx) {
+         ]),
+         visibilityPill(list.visibility),
+       ]),
++      list.description
++        ? el('p', { class: 'text-sm text-ink leading-relaxed', dataset: { savedListDescription: 'true' }, text: list.description })
++        : null,
+       el('p', { class: 'text-xs text-muted leading-relaxed', text: visibilityNote(list.visibility) }),
+     ]);
+ 
+-- 
+2.39.5
+
+
+From 8ef9828c2b12ab8bf1e7cf06ce4373155d842ba1 Mon Sep 17 00:00:00 2001
+From: usernode-bot <usernode-bot@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 17:45:05 +0000
+Subject: [PATCH 4/4] Saved lists: keep Phase 7 descriptions, slugs and place
+ ids; never copy into another person's list (F4, F5)
+
+Additive columns: saved_lists.description and saved_list_items.place_id.
+copyPhase7 copies each list's description and default slug, keeps the real
+place id on each item, and counts a Phase 7 membership only when the list
+belongs to the place's owner (otherwise the place goes to its owner's
+"Saved places" list). Rows that cannot become items stay in *_phase7 and the
+boot log counts them by reason. addItem and suggestion accept store the place
+id, and listPlaces (the assistant's get_saved_places) returns it.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ saved/store.js                                |  77 ++++++---
+ tests/saved.phase7-migration.postgres.test.js | 163 ++++++++++++++++++
+ 2 files changed, 218 insertions(+), 22 deletions(-)
+
+diff --git a/saved/store.js b/saved/store.js
+index b405c5c..1d2174a 100644
+--- a/saved/store.js
++++ b/saved/store.js
+@@ -38,6 +38,8 @@ ALTER TABLE saved_lists ADD COLUMN IF NOT EXISTS system_key TEXT
+   CHECK (system_key IN ('favorites','want_to_visit','travel','restaurants'));
+ CREATE UNIQUE INDEX IF NOT EXISTS saved_lists_owner_system_key_uniq
+   ON saved_lists (owner_id, system_key) WHERE system_key IS NOT NULL;
++-- The owner's description of a list, which Phase 7 lists carry.
++ALTER TABLE saved_lists ADD COLUMN IF NOT EXISTS description TEXT;
+ 
+ CREATE TABLE IF NOT EXISTS saved_list_items (
+   id BIGSERIAL PRIMARY KEY,
+@@ -57,6 +59,9 @@ CREATE TABLE IF NOT EXISTS saved_list_items (
+   UNIQUE (list_id, place_key)
+ );
+ CREATE INDEX IF NOT EXISTS saved_list_items_list_idx ON saved_list_items (list_id, created_at);
++-- The real search-result id the place was saved with, when it had one, so
++-- an item still names the same place the search stack returns.
++ALTER TABLE saved_list_items ADD COLUMN IF NOT EXISTS place_id TEXT;
+ COMMENT ON TABLE saved_list_items IS 'staging:private';
+ 
+ CREATE TABLE IF NOT EXISTS saved_list_suggestions (
+@@ -135,18 +140,23 @@ async function hasPhase7Schema(db) {
+ }
+ 
+ // Copy a retired Phase 7 set into the new tables. Lists keep their ids, so a
+-// link to one still opens it, and stay private: a Phase 7 list was only ever
+-// its owner's. Phase 7 stored no usernames, so the owner's id stands in until
+-// the owner next edits the list, which is the only way anyone else can come
+-// to see it (update() writes the real one).
++// link to one still opens it, their description and their default-list slug,
++// and stay private: a Phase 7 list was only ever its owner's. Phase 7 stored
++// no usernames, so the owner's id stands in until the owner next edits the
++// list, which is the only way anyone else can come to see it (update()
++// writes the real one). Nothing is dropped: whatever cannot become a row here
++// stays in the *_phase7 tables, and the log line counts it by reason.
+ async function copyPhase7(client) {
+   const { rows: lists } = await client.query('SELECT * FROM saved_lists_phase7 ORDER BY id');
+   for (const l of lists) {
+     const i = PHASE7_DEFAULT_KEYS.indexOf(l.system_key);
+     await client.query(
+-      `INSERT INTO saved_lists (id, owner_id, owner_username, name, emoji, visibility, created_at, updated_at)
+-       VALUES ($1, $2, $2, $3, $4, 'private', $5, $6)`,
+-      [l.id, l.user_id, l.name, i >= 0 ? model.DEFAULT_LISTS[i].emoji : model.EMOJIS[0], l.created_at, l.updated_at],
++      `INSERT INTO saved_lists (id, owner_id, owner_username, name, emoji, visibility, created_at, updated_at, description, system_key)
++       VALUES ($1, $2, $2, $3, $4, 'private', $5, $6, $7, $8)`,
++      [
++        l.id, l.user_id, l.name, i >= 0 ? model.DEFAULT_LISTS[i].emoji : model.EMOJIS[0], l.created_at, l.updated_at,
++        l.description || null, i >= 0 ? l.system_key : null,
++      ],
+     );
+   }
+   await client.query(
+@@ -164,18 +174,32 @@ async function copyPhase7(client) {
+   // snapshot is the one the new client sends for the same place, so its
+   // place_key matches if the place is added again. A place without a name or
+   // coordinates cannot be an item and stays only in saved_places_phase7.
++  // A membership counts only when the list belongs to the place's owner:
++  // Phase 7's foreign key let a row put one person's place in another
++  // person's list, and copying that would show it to the wrong person. Such
++  // a place is treated as in no list of its owner's.
+   const { rows: places } = await client.query(
+     `SELECT p.*, li.list_id, COALESCE(li.created_at, p.created_at) AS added_at
+        FROM saved_places_phase7 p
+-       LEFT JOIN saved_list_items_phase7 li ON li.user_id = p.user_id AND li.place_id = p.place_id
++       LEFT JOIN (saved_list_items_phase7 li
++                  JOIN saved_lists_phase7 pl ON pl.id = li.list_id AND pl.user_id = li.user_id)
++         ON li.user_id = p.user_id AND li.place_id = p.place_id
+       ORDER BY added_at, p.place_id`,
+   );
+   const unlisted = new Map();
+   let copied = 0;
++  const skipped = { noCoordinates: 0, noName: 0, invalid: 0, duplicate: 0 };
+   for (const p of places) {
+     // Checked here, not left to validatePlace: Number(null) is 0, which
+     // would put a place with no coordinates at 0,0.
+-    if (p.lat == null || p.lng == null) continue;
++    if (p.lat == null || p.lng == null) {
++      skipped.noCoordinates += 1;
++      continue;
++    }
++    if (typeof p.name !== 'string' || !p.name.trim()) {
++      skipped.noName += 1;
++      continue;
++    }
+     let place;
+     try {
+       place = model.validatePlace({
+@@ -188,6 +212,7 @@ async function copyPhase7(client) {
+         id: p.place_id,
+       });
+     } catch {
++      skipped.invalid += 1;
+       continue;
+     }
+     let listId = p.list_id;
+@@ -204,14 +229,19 @@ async function copyPhase7(client) {
+     }
+     const { rowCount } = await client.query(
+       `INSERT INTO saved_list_items
+-         (list_id, place_key, place_name, place_address, place_kind, place_provider, lat, lng, source, added_by_id, added_by_username, created_at)
+-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'owner',$9,$9,$10)
++         (list_id, place_key, place_name, place_address, place_kind, place_provider, lat, lng, source, added_by_id, added_by_username, created_at, place_id)
++       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'owner',$9,$9,$10,$11)
+        ON CONFLICT (list_id, place_key) DO NOTHING`,
+-      [listId, model.placeKeyOf(place), place.name, place.address, place.kind, place.provider, place.lat, place.lng, p.user_id, p.added_at],
++      [listId, model.placeKeyOf(place), place.name, place.address, place.kind, place.provider, place.lat, place.lng, p.user_id, p.added_at, p.place_id],
+     );
+     copied += rowCount;
++    if (!rowCount) skipped.duplicate += 1;
+   }
+-  console.log(`[saved] copied Phase 7 saved places: ${lists.length} lists, ${copied} of ${places.length} list entries`);
++  console.log(
++    `[saved] copied Phase 7 saved places: ${lists.length} lists, ${copied} of ${places.length} list entries` +
++      ` (kept only in *_phase7: ${skipped.noCoordinates} without coordinates, ${skipped.noName} without a name,` +
++      ` ${skipped.invalid} invalid, ${skipped.duplicate} duplicates of a copied entry)`,
++  );
+ }
+ 
+ function iso(v) {
+@@ -245,6 +275,7 @@ function toCard(row, viewer) {
+     emoji: row.emoji,
+     visibility: row.visibility,
+     systemKey: row.system_key || null,
++    description: row.description || null,
+     owner: { id: row.owner_id, username: row.owner_username },
+     itemCount: row.item_count || 0,
+     createdAt: iso(row.created_at),
+@@ -557,11 +588,11 @@ SELECT l.*,
+       // tap or a retried request can never duplicate a row.
+       const { rows: insertedRows } = await client.query(
+         `INSERT INTO saved_list_items
+-           (list_id, place_key, place_name, place_address, place_kind, place_provider, lat, lng, note, source, added_by_id, added_by_username)
+-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'owner',$10,$11)
++           (list_id, place_key, place_name, place_address, place_kind, place_provider, lat, lng, note, source, added_by_id, added_by_username, place_id)
++         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'owner',$10,$11,$12)
+          ON CONFLICT (list_id, place_key) DO NOTHING
+          RETURNING *`,
+-        [listId, key, place.name, place.address, place.kind, place.provider, place.lat, place.lng, note, viewer.id, viewer.username],
++        [listId, key, place.name, place.address, place.kind, place.provider, place.lat, place.lng, note, viewer.id, viewer.username, place.id],
+       );
+       if (!insertedRows[0]) {
+         throw new SavedError('already_in_list', 'This place is already in the list.', { status: 409 });
+@@ -676,15 +707,15 @@ SELECT l.*,
+         const place = model.validatePlace(s.payload);
+         const { rows: insertedItems } = await client.query(
+           `INSERT INTO saved_list_items
+-             (list_id, place_key, place_name, place_address, place_kind, place_provider, lat, lng, note, source, added_by_id, added_by_username)
+-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,'suggestion',$9,$10)
++             (list_id, place_key, place_name, place_address, place_kind, place_provider, lat, lng, note, source, added_by_id, added_by_username, place_id)
++           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,'suggestion',$9,$10,$11)
+            ON CONFLICT (list_id, place_key) DO NOTHING
+            RETURNING *`,
+           [
+             s.list_id,
+             model.placeKeyOf(place),
+             place.name, place.address, place.kind, place.provider, place.lat, place.lng,
+-            s.from_id, s.from_username,
++            s.from_id, s.from_username, place.id,
+           ],
+         );
+         if (!insertedItems[0]) {
+@@ -769,8 +800,10 @@ SELECT l.*,
+   }
+ 
+   // The assistant's get_saved_places: the places in the viewer's own lists,
+-  // newest first, once each however many of their lists hold one. Items are
+-  // snapshots that do not keep the search result's id, so none is given.
++  // newest first, once each however many of their lists hold one. `id` is
++  // the real search-result id the item was saved with, or null when the
++  // place had none (a coordinates-only result, or an item saved before the
++  // id was kept).
+   async function listPlaces(viewer) {
+     const { rows } = await pool.query(
+       `SELECT * FROM (
+@@ -782,7 +815,7 @@ SELECT l.*,
+       [viewer.id],
+     );
+     return rows.map((r) => ({
+-      id: null,
++      id: r.place_id || null,
+       name: r.place_name,
+       address: r.place_address,
+       category: r.place_kind,
+diff --git a/tests/saved.phase7-migration.postgres.test.js b/tests/saved.phase7-migration.postgres.test.js
+index da87330..d979d76 100644
+--- a/tests/saved.phase7-migration.postgres.test.js
++++ b/tests/saved.phase7-migration.postgres.test.js
+@@ -216,3 +216,166 @@ test('the assistant lists the places in your own lists, once each', { skip }, as
+   assert.deepEqual(places.map((p) => p.name).sort(), ['Corner Bakery', 'Kastanienallee Espresso', 'Unlisted viewpoint']);
+   assert.deepEqual(await store.listPlaces(BOB), []);
+ });
++
++test('default lists keep their slug, through a rename, and items keep the real place id', { skip }, async () => {
++  const fav = await store.getDetail(ALICE, 'favorites');
++  assert.equal(fav.list.id, String(phase7Ids['201:favorites']));
++  assert.equal(fav.list.name, 'My favourites');
++  assert.equal(fav.list.systemKey, 'favorites');
++  const weekend = await store.getDetail(ALICE, phase7Ids['201:weekend']);
++  assert.equal(weekend.list.systemKey, null);
++  const places = await store.listPlaces(ALICE);
++  assert.deepEqual(
++    places.map((p) => [p.name, p.id]).sort(),
++    [['Corner Bakery', 'osm:node/9'], ['Kastanienallee Espresso', 'osm:way/123'], ['Unlisted viewpoint', 'osm:node/11']],
++  );
++});
++
++// ── a second Phase 7 database per case, for the audit edge cases ──────────
++
++const extraSchemas = [];
++const extraPools = [];
++
++async function phase7Database(tag) {
++  const name = `${schema}_${tag}`;
++  const admin = new Pool({ connectionString: DB_URL });
++  await admin.query(`CREATE SCHEMA ${name}`);
++  await admin.end();
++  extraSchemas.push(name);
++  const p = new Pool({ connectionString: DB_URL, options: `-c search_path=${name}` });
++  extraPools.push(p);
++  return { name, pool: p };
++}
++
++test.after(async () => {
++  if (skip) return;
++  for (const p of extraPools) await p.end();
++  const admin = new Pool({ connectionString: DB_URL });
++  for (const name of extraSchemas) await admin.query(`DROP SCHEMA IF EXISTS ${name} CASCADE`);
++  await admin.end();
++});
++
++async function captureLog(fn) {
++  const lines = [];
++  const original = console.log;
++  console.log = (...args) => lines.push(args.join(' '));
++  try {
++    await fn();
++  } finally {
++    console.log = original;
++  }
++  return lines;
++}
++
++test('descriptions come across, a place in someone else\'s list stays its owner\'s, and nothing is dropped', { skip }, async () => {
++  const { pool: db } = await phase7Database('audit');
++  await db.query(PHASE7_SCHEMA_SQL);
++  const list = async (user, name, key, description) => (await db.query(
++    `INSERT INTO saved_lists (user_id, name, kind, system_key, description) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
++    [user, name, key ? 'default' : 'custom', key, description],
++  )).rows[0].id;
++  const aliceTravel = await list('201', 'Travel', 'travel', 'Trips I still want to take');
++  const aliceEats = await list('201', 'Jakarta eats', null, 'Best warungs');
++  const bobFav = await list('202', 'Favorites', 'favorites', null);
++  const place = (user, id, name, lat, lng) => db.query(
++    `INSERT INTO saved_places (user_id, place_id, name, lat, lng, source) VALUES ($1, $2, $3, $4, $5, 'photon')`,
++    [user, id, name, lat, lng],
++  );
++  await place('201', 'osm:node/20', 'Warung Bu Sri', -6.2, 106.8);
++  await place('201', 'osm:node/21', 'Only in Bob\'s list', -6.21, 106.81);
++  await place('201', '-6.22,106.82', 'Coordinate spot', -6.22, 106.82);
++  await place('201', '-6.22000,106.82000', 'Coordinate spot again', -6.22, 106.82);
++  await place('201', 'osm:node/22', null, -6.23, 106.83);
++  await place('201', 'osm:node/23', 'Nowhere', null, null);
++  const member = (listId, user, placeId) => db.query(
++    'INSERT INTO saved_list_items (list_id, user_id, place_id) VALUES ($1, $2, $3)', [listId, user, placeId],
++  );
++  await member(aliceEats, '201', 'osm:node/20');
++  await member(bobFav, '201', 'osm:node/21'); // Phase 7's foreign key allowed this
++  await member(aliceTravel, '201', '-6.22,106.82');
++  await member(aliceTravel, '201', '-6.22000,106.82000');
++  await member(aliceTravel, '201', 'osm:node/22');
++  await member(aliceTravel, '201', 'osm:node/23');
++
++  const s = createStore({ pool: db });
++  const log = await captureLog(() => s.migrate());
++  assert.ok(
++    log.some((l) => l.includes('1 without coordinates, 1 without a name, 0 invalid, 1 duplicates')),
++    `log was: ${log.join('\n')}`,
++  );
++
++  const travel = await s.getDetail(ALICE, aliceTravel);
++  assert.equal(travel.list.description, 'Trips I still want to take');
++  assert.equal(travel.list.systemKey, 'travel');
++  assert.deepEqual(travel.items.map((i) => i.place.name), ['Coordinate spot']);
++  const eats = await s.getDetail(ALICE, aliceEats);
++  assert.equal(eats.list.description, 'Best warungs');
++  assert.equal(eats.list.systemKey, null);
++
++  // Bob's list never shows Alice's place; it lands in Alice's own
++  // "Saved places" list instead.
++  const bob = await s.getDetail(BOB, bobFav);
++  assert.deepEqual(bob.items, []);
++  assert.deepEqual(await s.listPlaces(BOB), []);
++  const mine = await s.listMine(ALICE, {});
++  const unlisted = mine.items.find((c) => c.name === 'Saved places');
++  const unlistedDetail = await s.getDetail(ALICE, unlisted.id);
++  assert.deepEqual(unlistedDetail.items.map((i) => i.place.name), ['Only in Bob\'s list']);
++
++  // Every Phase 7 row is still there, untouched.
++  const counts = await db.query(
++    `SELECT (SELECT count(*) FROM saved_lists_phase7)::int AS lists,
++            (SELECT count(*) FROM saved_places_phase7)::int AS places,
++            (SELECT count(*) FROM saved_list_items_phase7)::int AS items,
++            (SELECT count(*) FROM saved_lists_phase7 WHERE description IS NOT NULL)::int AS described`,
++  );
++  assert.deepEqual(counts.rows[0], { lists: 3, places: 6, items: 6, described: 2 });
++});
++
++test('two boots at once copy Phase 7 exactly once', { skip }, async () => {
++  const { pool: db, name } = await phase7Database('race');
++  await db.query(PHASE7_SCHEMA_SQL);
++  const { rows } = await db.query(
++    `INSERT INTO saved_lists (user_id, name, kind, system_key) VALUES ('201', 'Favorites', 'default', 'favorites') RETURNING id`,
++  );
++  await db.query(`INSERT INTO saved_places (user_id, place_id, name, lat, lng) VALUES ('201', 'osm:node/30', 'Race cafe', 1, 2)`);
++  await db.query(`INSERT INTO saved_list_items (list_id, user_id, place_id) VALUES ($1, '201', 'osm:node/30')`, [rows[0].id]);
++  const other = new Pool({ connectionString: DB_URL, options: `-c search_path=${name}` });
++  extraPools.push(other);
++  await Promise.all([createStore({ pool: db }).migrate(), createStore({ pool: other }).migrate()]);
++  const n = await db.query('SELECT (SELECT count(*) FROM saved_lists)::int AS lists, (SELECT count(*) FROM saved_list_items)::int AS items');
++  assert.deepEqual(n.rows[0], { lists: 1, items: 1 });
++});
++
++test('a migration that cannot finish changes nothing', { skip }, async () => {
++  const { pool: db } = await phase7Database('rollback');
++  await db.query(PHASE7_SCHEMA_SQL);
++  await db.query(`INSERT INTO saved_lists (user_id, name, kind, system_key, description) VALUES ('201', 'Favorites', 'default', 'favorites', 'kept')`);
++  // A leftover from an earlier, partly undone attempt blocks the rename.
++  await db.query('CREATE TABLE saved_places_phase7 (leftover INT)');
++  await assert.rejects(createStore({ pool: db }).migrate(), /saved_places_phase7/);
++  const cols = await db.query(
++    `SELECT column_name FROM information_schema.columns
++      WHERE table_schema = current_schema() AND table_name = 'saved_lists' AND column_name IN ('user_id', 'owner_id')`,
++  );
++  assert.deepEqual(cols.rows.map((r) => r.column_name), ['user_id']);
++  const kept = await db.query('SELECT description FROM saved_lists');
++  assert.deepEqual(kept.rows, [{ description: 'kept' }]);
++  const moved = await db.query(`SELECT to_regclass('saved_lists_phase7') AS t`);
++  assert.equal(moved.rows[0].t, null);
++});
++
++test('a fresh database gets the new tables and no *_phase7 copies', { skip }, async () => {
++  const { pool: db } = await phase7Database('fresh');
++  const s = createStore({ pool: db });
++  await s.migrate();
++  await s.migrate();
++  const { rows } = await db.query(
++    `SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
++      WHERE n.nspname = current_schema() AND relkind = 'r' AND relname LIKE 'saved%' ORDER BY relname`,
++  );
++  assert.deepEqual(rows.map((r) => r.relname),
++    ['saved_item_comments', 'saved_list_items', 'saved_list_suggestions', 'saved_lists', 'saved_user_state']);
++  const fav = await s.getDetail(ALICE, 'favorites');
++  assert.equal(fav.list.systemKey, 'favorites');
++});
+-- 
+2.39.5
+
