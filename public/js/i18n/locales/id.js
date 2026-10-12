@@ -70,6 +70,7 @@ export default {
   'map.showingAccuracy': 'Menampilkan lokasi Anda (akurat sekitar {distance}).',
   'map.showing': 'Menampilkan lokasi Anda.',
   'map.locateFailed': 'Kami tidak dapat menentukan lokasi Anda saat ini. Silakan coba lagi.',
+  'map.placeNoPosition': 'Tempat ini tidak punya posisi yang valid, jadi peta tetap di posisinya.',
 
   // home
   'home.placesTitle': 'Tempat',
