@@ -71,6 +71,7 @@ export default {
   'map.showingAccuracy': 'Showing your location (accurate to about {distance}).',
   'map.showing': 'Showing your location.',
   'map.locateFailed': 'We could not determine your location right now. Please try again.',
+  'map.placeNoPosition': 'This place has no valid position, so the map stays where it is.',
 
   // 3D map (Phase 12H)
   'map.3dTitle': '3D view',

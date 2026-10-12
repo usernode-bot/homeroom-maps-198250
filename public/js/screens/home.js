@@ -8,11 +8,10 @@
 // services/search.js), suggestions open in a panel below the input, a chosen
 // suggestion shows as the Selected place card.
 //
-// Deferred: "Search this area" and "Nearby" controls, and centering the map
-// on a selected search result. The search service already exposes
-// searchInView(bbox) and searchNear(lat, lon, km) and the server routes
-// accept them; only the map-anchored UI is missing. The disabled "Map
-// layers" control stays as a labelled placeholder.
+// Deferred: "Search this area" and "Nearby" controls. The search service
+// already exposes searchInView(bbox) and searchNear(lat, lon, km) and the
+// server routes accept them; only the map-anchored UI is missing. The
+// disabled "Map layers" control stays as a labelled placeholder.
 import { el } from '../components/dom.js';
 import { button } from '../components/button.js';
 import { errorState } from '../components/error-state.js';
@@ -24,6 +23,7 @@ import { attributionParts, rendererLink } from '../map/attribution.js';
 import { mapControls } from '../map/controls.js';
 import { setPressed } from '../map/controls-3d.js';
 import { createSearchSession, setOfflineSearchCenter, bootQuery } from '../services/search.js';
+import { selectedPlaceView } from '../map/selected-place.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 import { createAssistantPanel } from '../components/assistant/panel.js';
@@ -61,10 +61,35 @@ let mapTerrainOn = false;
 // plus a tap) never stacks a second panel over the map.
 let trafficSheet = null;
 
-// PLACEHOLDER(map-phase): the map adapter exists now, but centering it on a
-// selected search result and dropping a marker aren't wired yet — this hook
-// is the single seam for that.
-function focusSelectedPlace(_place) {}
+// Move the map to a chosen search result and mark it. The adapter's camera
+// and marker calls wait for the map themselves (setMarkers holds its payload
+// until load), but the screen holds the pick in `view.pendingPlace` until
+// `onReady` so the camera move is never sent through an adapter that is not
+// mounted yet — maplibre's centerOn returns early while `map` is null.
+function focusSelectedPlace(view, place) {
+  const selected = selectedPlaceView(place);
+  if (!selected) {
+    // The rest of the map keeps working; only the move is refused.
+    showNote(view, t('map.placeNoPosition'));
+    return;
+  }
+  // A later valid pick supersedes a stale no-position note. Other notes
+  // (location, share) are left as they are.
+  if (view.note.textContent === t('map.placeNoPosition')) view.note.style.display = 'none';
+  if (!view.viewRef.service) {
+    view.pendingPlace = place; // latest pick wins; applied in onReady
+    return;
+  }
+  const service = view.viewRef.service;
+  try {
+    service.setMarkers(selected.markers);
+    if (typeof service.centerOn === 'function') {
+      service.centerOn(selected.center, selected.zoom);
+    }
+  } catch {
+    /* the card still names the place, even if the camera cannot move */
+  }
+}
 
 export async function render(ctx) {
   if (activeService) {
@@ -81,7 +106,7 @@ export async function render(ctx) {
   map3dOn = readPref(MAP_3D_PREF, ['on', 'off'], 'off') === 'on';
   mapTerrainOn = false;
 
-  const session = createSearchSession({ onSelect: focusSelectedPlace });
+  const session = createSearchSession({ onSelect: (place) => focusSelectedPlace(view, place) });
 
   const bar = createSearchBar({
     onInput: (value) => session.input(value),
@@ -128,7 +153,21 @@ export async function render(ctx) {
     bar.update(state);
     panel.update(state);
     selectedSlot.replaceChildren(
-      state.selected ? selectedPlaceCard({ place: state.selected, onRemove: () => session.removeSelected() }) : [],
+      state.selected
+        ? selectedPlaceCard({
+            place: state.selected,
+            onRemove: () => {
+              session.removeSelected();
+              // "Hapus" clears the marker but keeps the camera where it is.
+              try {
+                view.viewRef.service?.setMarkers(null);
+              } catch {
+                /* the map may already be going away */
+              }
+              view.pendingPlace = null;
+            },
+          })
+        : [],
     );
   }
   session.subscribe(sync);
@@ -332,7 +371,16 @@ function onReady(service, view) {
       setOfflineSearchCenter(null);
     }
   }
-  applySharedLocation(service, view);
+  applySharedLocation(service, view)
+    .catch(() => {})
+    .then(() => {
+      // A place picked while the map was still loading moves now, after the
+      // share marker has had its turn — a pick overrides the share.
+      if (!view.pendingPlace) return;
+      const place = view.pendingPlace;
+      view.pendingPlace = null;
+      focusSelectedPlace(view, place);
+    });
 }
 
 // Phase 12F: one incoming share, opened by deep link (#/?share=<id>). Only
