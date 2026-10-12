@@ -22,6 +22,7 @@ export {
   expiresInLabel,
   consentText,
   deviceStatusText,
+  startErrorCopy,
   isStale,
   isVeryStale,
 } from './sharing-core.js';

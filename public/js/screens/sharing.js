@@ -49,7 +49,7 @@ import {
   deviceStatusText,
   SHARING_LOOP,
 } from '../services/sharing.js';
-import { SHARING_INTERVAL_MS } from '../services/sharing-core.js';
+import { SHARING_INTERVAL_MS, startErrorCopy } from '../services/sharing-core.js';
 
 export async function render(ctx) {
   const host = el('div', { class: 'flex flex-col gap-4', dataset: { sharingHost: 'loading' } });
@@ -170,10 +170,19 @@ function renderOutgoing(session) {
   const body = el('div', { class: 'rounded-card border border-line bg-surface p-4' }, [
     title,
     el('div', { class: 'mt-2 flex flex-col gap-2' }, [
+      session && session.expiresAt
+        ? el('p', {
+            class: 'text-sm font-semibold text-ink',
+            dataset: { sharingActiveUntil: 'true' },
+            text: t('sharing.activeUntil', {
+              ends: formatTime(new Date(session.expiresAt), { locale: getLocale() }),
+            }),
+          })
+        : null,
       el('p', {
         class: 'text-xs text-muted',
         dataset: { sharingExpiry: 'true' },
-        text: expiryLine(session) || '',
+        text: expiryLine(session, { t }) || '',
       }),
       statusSlot,
       recipientsList,
@@ -426,16 +435,29 @@ async function openStartSheet() {
 
   let selected = []; // chosen roster members, in tap order
   let durationMinutes = 60;
+  // Created ENABLED: button() only attaches the click listener when the
+  // button is born enabled, so a disabled birth left this button permanently
+  // deaf — the reported "nothing happens" bug. redraw() disables it before
+  // the sheet is shown anyway, because nothing is selected yet.
   const confirmBtn = button(t('sharing.start'), {
-    disabled: true,
     attrs: { dataset: { confirmStart: 'true' } },
     onClick: () => confirmStart(),
   });
   const errorSlot = el('div', { dataset: { sharingStartError: 'true' } });
   const consentSlot = el('div', { class: 'text-xs text-muted leading-relaxed', dataset: { sharingConsent: 'true' } });
 
+  let busy = false; // from the first tap until the attempt resolves
+
+  function setBusy(on) {
+    busy = on;
+    confirmBtn.disabled = on || selected.length === 0;
+    confirmBtn.textContent = on ? t('sharing.starting') : t('sharing.start');
+    if (on) confirmBtn.setAttribute('aria-busy', 'true');
+    else confirmBtn.removeAttribute('aria-busy');
+  }
+
   function redraw() {
-    confirmBtn.disabled = selected.length === 0;
+    if (!busy) confirmBtn.disabled = selected.length === 0;
     const names = selected.map((m) => m.username);
     const endsAt = new Date(Date.now() + durationMinutes * 60_000);
     consentSlot.textContent =
@@ -484,20 +506,38 @@ async function openStartSheet() {
   redraw();
 
   // Start = one real fix, then the POST. A failed permission check means NO
-  // session is created — the honest start, per the states table.
+  // session is created — the honest start, per the states table. Every
+  // failure is named in the app's own words, on the card above the button;
+  // the raw err.message (Directions copy, server English) never reaches the
+  // screen. The busy flag makes a double tap a no-op and keeps redraw() from
+  // re-enabling the button mid-flight.
+  function showStartError(err) {
+    const { titleKey, bodyKey } = startErrorCopy(err);
+    errorSlot.replaceChildren(
+      noticeCard({
+        title: t(titleKey),
+        body: t(bodyKey),
+        dataset: { sharingStartBlocked: 'true' },
+      }),
+    );
+    try {
+      errorSlot.scrollIntoView({ block: 'nearest' });
+    } catch {
+      /* an old frame without scrollIntoView: the card is above the button anyway */
+    }
+  }
+
   async function confirmStart() {
-    confirmBtn.disabled = true;
+    if (busy) return;
+    setBusy(true);
+    errorSlot.replaceChildren();
     try {
       await getCurrentLocation();
     } catch (err) {
-      confirmBtn.disabled = false;
-      errorSlot.replaceChildren(
-        noticeCard({
-          title: t('sharing.locationOffTitle'),
-          body: err && err.message ? err.message : '',
-          dataset: { sharingStartBlocked: 'true' },
-        }),
-      );
+      showStartError(err);
+      // `reopening` means the shell is reloading this frame to apply the
+      // fresh grant: leave the button resting, the reload is imminent.
+      if (!(err && err.reason === 'reopening')) setBusy(false);
       return;
     }
     try {
@@ -510,18 +550,12 @@ async function openStartSheet() {
       surface.dismiss();
       rerender();
     } catch (err) {
-      confirmBtn.disabled = false;
-      errorSlot.replaceChildren(
-        noticeCard({
-          title: t('sharing.startFailedTitle'),
-          body: err && err.message ? err.message : '',
-          dataset: { sharingStartError: 'true' },
-        }),
-      );
+      showStartError(err);
+      setBusy(false);
     }
   }
 
-  body.replaceChildren(pickerSlot, confirmBtn, errorSlot);
+  body.replaceChildren(pickerSlot, errorSlot, confirmBtn);
 }
 
 // ── Demo (staging only) ───────────────────────────────────────────────────
