@@ -18,6 +18,8 @@ const PATHS = {
   locate:
     '<circle cx="12" cy="12" r="3.5"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
+  // Lucide "cloud", added for the Weather control (Phase 12G).
+  weather: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
 };
 
 export function mapIcon(name, { class: extra = 'h-5 w-5' } = {}) {

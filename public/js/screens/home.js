@@ -8,42 +8,88 @@
 // services/search.js), suggestions open in a panel below the input, a chosen
 // suggestion shows as the Selected place card.
 //
-// Deferred: "Search this area" and "Nearby" controls, and centering the map
-// on a selected search result. The search service already exposes
-// searchInView(bbox) and searchNear(lat, lon, km) and the server routes
-// accept them; only the map-anchored UI is missing. The disabled "Map
-// layers" control stays as a labelled placeholder.
+// Deferred: "Search this area" and "Nearby" controls. The search service
+// already exposes searchInView(bbox) and searchNear(lat, lon, km) and the
+// server routes accept them; only the map-anchored UI is missing. The
+// disabled "Map layers" control stays as a labelled placeholder.
 import { el } from '../components/dom.js';
 import { button } from '../components/button.js';
 import { errorState } from '../components/error-state.js';
 import { loading } from '../components/loading.js';
 import { placeholderPanel } from '../components/placeholder-panel.js';
-import { createMapService } from '../services/map.js';
+import { createMapService, trafficPanelState } from '../services/map.js';
 import { MapErrorKind } from '../map/errors.js';
 import { attributionParts, rendererLink } from '../map/attribution.js';
 import { mapControls } from '../map/controls.js';
+import { setPressed } from '../map/controls-3d.js';
 import { createSearchSession, setOfflineSearchCenter, bootQuery } from '../services/search.js';
+import { selectedPlaceView } from '../map/selected-place.js';
 import { createSearchBar } from '../components/search/search-bar.js';
 import { createSearchPanel, selectedPlaceCard } from '../components/search/search-results.js';
 import { createAssistantPanel } from '../components/assistant/panel.js';
+import { createWeatherPanel } from '../components/weather/weather-panel.js';
+import { setWeatherCapability, requestWeather } from '../services/weather.js';
 import { present } from '../components/surface.js';
 import { createAssistant, mapContext, fetchStatus, normalizeAction } from '../services/assistant.js';
 import { savedPlaces } from '../services/saved-places.js';
 import { addItem as addTripItem } from '../services/trips.js';
-import { getState } from '../state.js';
+import { fetchConfig } from '../api.js';
+import { getState, setState } from '../state.js';
 import { t } from '../i18n/index.js';
 import { formatDistance } from '../i18n/format.js';
+import { readPref, writePref } from '../i18n/prefs.js';
+import { fetchIncoming } from '../services/sharing.js';
+import { ageLabel } from '../services/sharing-core.js';
 
 const DEFAULT_ATTRIBUTION = 'OpenFreeMap, OpenMapTiles, OpenStreetMap';
+
+// The 3D camera preference (Phase 12H): device-local like the theme, guarded
+// by the shared prefs helper. Only 'on' and 'off' are ever stored, and the
+// default is off, so the map always opens level until the person asks for 3D.
+const MAP_3D_PREF = 'hm-map-3d';
 
 // The live map for the screen currently mounted. Torn down on the next render
 // so a navigation never leaves a WebGL context or tile poller behind.
 let activeService = null;
+// The 3D toggles' live state for the mounted screen; reset per render from
+// the preference (3D) or its default (terrain, which is never persisted —
+// it exists only while an operator configures a source).
+let map3dOn = false;
+let mapTerrainOn = false;
 
-// PLACEHOLDER(map-phase): the map adapter exists now, but centering it on a
-// selected search result and dropping a marker aren't wired yet — this hook
-// is the single seam for that.
-function focusSelectedPlace(_place) {}
+// The open traffic sheet's dismiss handle, so a second tap (or a deep link
+// plus a tap) never stacks a second panel over the map.
+let trafficSheet = null;
+
+// Move the map to a chosen search result and mark it. The adapter's camera
+// and marker calls wait for the map themselves (setMarkers holds its payload
+// until load), but the screen holds the pick in `view.pendingPlace` until
+// `onReady` so the camera move is never sent through an adapter that is not
+// mounted yet — maplibre's centerOn returns early while `map` is null.
+function focusSelectedPlace(view, place) {
+  const selected = selectedPlaceView(place);
+  if (!selected) {
+    // The rest of the map keeps working; only the move is refused.
+    showNote(view, t('map.placeNoPosition'));
+    return;
+  }
+  // A later valid pick supersedes a stale no-position note. Other notes
+  // (location, share) are left as they are.
+  if (view.note.textContent === t('map.placeNoPosition')) view.note.style.display = 'none';
+  if (!view.viewRef.service) {
+    view.pendingPlace = place; // latest pick wins; applied in onReady
+    return;
+  }
+  const service = view.viewRef.service;
+  try {
+    service.setMarkers(selected.markers);
+    if (typeof service.centerOn === 'function') {
+      service.centerOn(selected.center, selected.zoom);
+    }
+  } catch {
+    /* the card still names the place, even if the camera cannot move */
+  }
+}
 
 export async function render(ctx) {
   if (activeService) {
@@ -55,8 +101,12 @@ export async function render(ctx) {
 
   const mapConfig = (getState().config && getState().config.map) || null;
   const force = demoState();
+  // Fresh screen: the 3D camera state restarts from the stored preference,
+  // and terrain restarts off (it is not persisted).
+  map3dOn = readPref(MAP_3D_PREF, ['on', 'off'], 'off') === 'on';
+  mapTerrainOn = false;
 
-  const session = createSearchSession({ onSelect: focusSelectedPlace });
+  const session = createSearchSession({ onSelect: (place) => focusSelectedPlace(view, place) });
 
   const bar = createSearchBar({
     onInput: (value) => session.input(value),
@@ -103,7 +153,21 @@ export async function render(ctx) {
     bar.update(state);
     panel.update(state);
     selectedSlot.replaceChildren(
-      state.selected ? selectedPlaceCard({ place: state.selected, onRemove: () => session.removeSelected() }) : [],
+      state.selected
+        ? selectedPlaceCard({
+            place: state.selected,
+            onRemove: () => {
+              session.removeSelected();
+              // "Hapus" clears the marker but keeps the camera where it is.
+              try {
+                view.viewRef.service?.setMarkers(null);
+              } catch {
+                /* the map may already be going away */
+              }
+              view.pendingPlace = null;
+            },
+          })
+        : [],
     );
   }
   session.subscribe(sync);
@@ -160,6 +224,16 @@ export async function render(ctx) {
   });
   note.style.display = 'none';
 
+  // The denied-location help sits under the note: the retry button on its own
+  // after a first refusal, and the phone-settings steps after a second. It is
+  // a separate div because the steps are an `ol`, which cannot sit inside the
+  // note's `p`.
+  const locationHelp = el('div', {
+    class: 'flex flex-col gap-2 px-1 text-xs text-muted',
+    dataset: { locationHelp: 'true' },
+  });
+  locationHelp.style.display = 'none';
+
   const attribution = el('p', {
     class:
       'px-1 text-[11px] leading-relaxed text-muted [&_a]:text-brand [&_a]:underline',
@@ -187,6 +261,7 @@ export async function render(ctx) {
 
     container,
     note,
+    locationHelp,
     attribution,
 
     assistantMount(session, viewRef),
@@ -208,6 +283,11 @@ export async function render(ctx) {
     session.commit();
   }
 
+  // A `?traffic=open` deep link boots straight into the traffic panel, so a
+  // screenshot or check reaches the honest not-connected state without an
+  // interaction — the same affordance the assistant deep link uses.
+  if (trafficParam() === 'open') setTimeout(() => openTrafficPanel(), 0);
+
   const config = mapConfig && mapConfig.configured
     ? mapConfig
     : {
@@ -217,7 +297,16 @@ export async function render(ctx) {
         styleUrl: null,
         styleUrlDark: null,
         attribution: DEFAULT_ATTRIBUTION,
-        capabilities: { rotation: false, touchGestures: false, accuracyCircle: false, offline: false },
+        capabilities: {
+          rotation: false,
+          touchGestures: false,
+          accuracyCircle: false,
+          offline: false,
+          pitch: false,
+          buildings: false,
+          terrain: false,
+        },
+        threeD: { maxPitch: 60, terrainUrl: '', terrainAttribution: '' },
       };
 
   // The app's own attribution strip is rendered up front from config, so it is
@@ -225,7 +314,25 @@ export async function render(ctx) {
   // what satisfies the data licence when tiles never arrive.
   renderAttribution(attribution, config.attribution || DEFAULT_ATTRIBUTION);
 
-  const view = { container, surface, overlay, controls, note, viewRef };
+  const view = { container, surface, overlay, controls, note, locationHelp, viewRef, locationDenials: 0 };
+
+  // A `?share=<id>` deep link (Phase 12F): one incoming share opened straight
+  // onto the map. Held on the view and applied once the map is ready.
+  const shareId = shareParam();
+  if (shareId) view.pendingShareId = shareId;
+
+  // A `?location=denied|steps` deep link reaches the denied-location help
+  // without a refusal: one denial for `denied`, two for `steps`. No permission
+  // is asked at boot — the ask still happens at the moment of need — and the
+  // button in that state runs the real permission flow.
+  if (!force) {
+    const locationState = locationParam();
+    if (locationState === 'denied') showLocationDenied(view, t('map.denied'));
+    else if (locationState === 'steps') {
+      showLocationDenied(view, t('map.denied'));
+      showLocationDenied(view, t('map.denied'));
+    }
+  }
 
   // A forced demo state short-circuits the real path only for the state it
   // names; every other route mounts the live adapter through the service.
@@ -233,6 +340,11 @@ export async function render(ctx) {
     showMessage(view, 'unconfigured');
     return;
   }
+
+  // A `?weather=open` deep link boots straight into the weather panel, the
+  // same way ?assistant= reaches the assistant sheet. The forced states have
+  // no live map, so they have no weather surface either.
+  if (!force && weatherParam() === 'open') setTimeout(() => openWeatherPanel(viewRef), 0);
 
   mountMap(view, config, force === 'unsupported' ? 'unsupported' : null);
 }
@@ -248,6 +360,10 @@ function mountMap(view, config, force = null) {
   showOverlay(view, loading({ label: t('map.loading') }));
   const service = createMapService(config, {
     force,
+    onTerrainError: () => {
+      if (activeService !== service) return;
+      onTerrainFailed(view);
+    },
     onState: (state, err) => {
       if (activeService !== service) return;
       if (state === 'ready') onReady(service, view);
@@ -264,6 +380,11 @@ function onReady(service, view) {
   hideOverlay(view);
   view.controls.replaceChildren(liveControls(service, view));
   view.viewRef.service = service;
+  // A stored 3D preference applies once the map is ready to take camera
+  // moves; the toggle already rendered in its pressed state.
+  if (map3dOn && service.capabilities().pitch) {
+    service.set3DEnabled(true);
+  }
   // Offline search picks the region covering the map center when the renderer
   // exposes one; the keyless adapter may not, in which case the service falls
   // back to the most recently completed region. Either way nothing is guessed.
@@ -274,6 +395,58 @@ function onReady(service, view) {
       setOfflineSearchCenter(null);
     }
   }
+  applySharedLocation(service, view)
+    .catch(() => {})
+    .then(() => {
+      // A place picked while the map was still loading moves now, after the
+      // share marker has had its turn — a pick overrides the share.
+      if (!view.pendingPlace) return;
+      const place = view.pendingPlace;
+      view.pendingPlace = null;
+      focusSelectedPlace(view, place);
+    });
+}
+
+// Phase 12F: one incoming share, opened by deep link (#/?share=<id>). Only
+// the single position the sharer actually posted is shown — the marker is
+// labelled with their initial and the note carries the name and the honest
+// age of the fix. Never a trail, never a guess from any other data.
+async function applySharedLocation(service, view) {
+  if (!view.pendingShareId) return;
+  const wanted = view.pendingShareId;
+  view.pendingShareId = null;
+  let incoming;
+  try {
+    incoming = await fetchIncoming();
+  } catch {
+    showNote(view, t('sharing.shareLoadFailed'));
+    return;
+  }
+  const shares = (incoming && Array.isArray(incoming.shares) ? incoming.shares : []);
+  const item = shares.find((s) => String(s.id) === String(wanted));
+  if (!item) {
+    showNote(view, t('sharing.shareGone'));
+    return;
+  }
+  const fix = item.lastFix;
+  if (!fix || typeof fix.updatedAt !== 'string') {
+    showNote(view, t('sharing.mapNoFix'));
+    return;
+  }
+  const name = (item.sharer && item.sharer.username) || '?';
+  const initial = name.slice(0, 1).toUpperCase();
+  try {
+    service.setMarkers([{ lng: fix.lng, lat: fix.lat, label: initial }]);
+    if (typeof service.centerOn === 'function') {
+      service.centerOn({ lat: fix.lat, lng: fix.lng }, 14);
+    }
+  } catch {
+    /* the note still states what was shared, even if the marker cannot draw */
+  }
+  showNote(
+    view,
+    t('sharing.mapNote', { name }) + ' · ' + ageLabel(item.fixAgeSeconds, { t }),
+  );
 }
 
 function onFailure(service, view, err) {
@@ -351,16 +524,153 @@ function hideOverlay(view) {
 }
 
 function liveControls(service, view) {
+  const capabilities = service.capabilities();
   const column = mapControls({
-    capabilities: service.capabilities(),
+    capabilities,
     myLocationOn: false,
     onZoomIn: () => service.zoomIn(),
     onZoomOut: () => service.zoomOut(),
     onResetNorth: () => service.resetNorth(),
     onMyLocation: () => requestLocation(service, view),
+    // The 3D slots are passed only when the capability says the control may
+    // exist; an unavailable capability leaves no control behind (Phase 12H).
+    threeD: capabilities.pitch
+      ? { on: map3dOn, onToggle: (next) => setThreeD(service, view, next) }
+      : null,
+    terrain: capabilities.terrain
+      ? { on: mapTerrainOn, onToggle: (next) => setTerrain(service, view, next) }
+      : null,
+    onWeather: () => openWeatherPanel(view.viewRef),
+    onTraffic: () => openTrafficPanel(),
   });
   column.classList.add('pointer-events-auto');
   return column;
+}
+
+// ── 3D camera and terrain toggles (Phase 12H) ────────────────────────────
+
+function setThreeD(service, view, next) {
+  map3dOn = Boolean(next);
+  writePref(MAP_3D_PREF, map3dOn ? 'on' : 'off');
+  service.set3DEnabled(map3dOn);
+  setPressed(view.controls.querySelector('[data-map-control="3d"]'), map3dOn);
+}
+
+function setTerrain(service, view, next) {
+  mapTerrainOn = Boolean(next);
+  service.setTerrainEnabled(mapTerrainOn);
+  setPressed(view.controls.querySelector('[data-map-control="terrain"]'), mapTerrainOn);
+}
+
+// A terrain source that failed is torn down by the adapter; the capability
+// went with it, so the screen only has to say so and reset the toggle.
+function onTerrainFailed(view) {
+  mapTerrainOn = false;
+  setPressed(view.controls.querySelector('[data-map-control="terrain"]'), false);
+  const message = t('map.terrainFailed');
+  showNote(view, message);
+  toast(message, { error: true });
+}
+
+// ── live traffic panel (Phase 12D) ───────────────────────────────────────
+
+// The honest answer to "does this map show live traffic?". The panel reads
+// only the app's own config snapshot and the i18n layer — it contacts no
+// provider, because none is connected (the T1 gate is closed), and the copy
+// it renders comes from trafficPanelState(), which can only ever name i18n
+// keys. Community reports are named as what they are; they are never
+// presented as verified live traffic.
+function openTrafficPanel() {
+  if (trafficSheet) return;
+  const body = el('div', { class: 'flex flex-col gap-3' }, []);
+
+  const renderNotice = async ({ fetchFailed = false } = {}) => {
+    // "Check again" re-reads the app's configuration — never a provider: the
+    // gate is document-driven, so the honest state can only change through
+    // config, the same way the B2 tile gate works. A failed fetch is the
+    // offline line, not a spinner and not a guess.
+    if (!fetchFailed) {
+      try {
+        const fresh = await fetchConfig();
+        setState({ config: fresh });
+      } catch {
+        renderNotice({ fetchFailed: true });
+        return;
+      }
+    }
+    const config = getState().config || {};
+    const online = navigator.onLine !== false && !fetchFailed;
+    const state = trafficPanelState(config.traffic, { online });
+    const notice = el(
+      'div',
+      {
+        class: 'rounded-card border border-line bg-surface px-4 py-4',
+        dataset: { trafficPanel: 'true' },
+      },
+      [
+        el('p', { class: 'text-sm font-semibold text-ink', text: t('traffic.panelTitle') }),
+        ...state.lines.map((key) =>
+          el('p', { class: 'mt-1 text-sm text-muted leading-relaxed', text: t(key) }),
+        ),
+        // Unreachable while the provider registry is empty; a future
+        // authorized provider change replaces this panel with the connected
+        // states. Naming the provider is attribution, not a data claim.
+        state.enabled && config.traffic && config.traffic.provider
+          ? el('p', { class: 'mt-1 text-xs text-muted', text: config.traffic.provider })
+          : null,
+        el('div', { class: 'mt-3' }, [
+          button(t('traffic.checkAgain'), {
+            variant: 'secondary',
+            attrs: { 'data-traffic-check': 'true' },
+            onClick: () => renderNotice(),
+          }),
+        ]),
+      ].filter(Boolean),
+    );
+    body.replaceChildren(notice);
+  };
+
+  renderNotice().catch((err) => console.warn('[traffic] panel render failed: ' + ((err && err.message) || err)));
+  trafficSheet = present(body, {
+    label: t('traffic.panelTitle'),
+    onDismiss: () => {
+      trafficSheet = null;
+    },
+  });
+}
+
+// The traffic deep-link value ('open'), read from the URL query or the query
+// after the hash, exactly like demoState reads ?map=.
+function trafficParam() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('traffic');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('traffic');
+    }
+  } catch {
+    /* no URL, no traffic state */
+  }
+  return value === 'open' ? 'open' : null;
+}
+
+// The denied-location deep link, read the same way: `denied` shows one refusal,
+// `steps` shows the phone-settings steps (a second refusal).
+function locationParam() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('location');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('location');
+    }
+  } catch {
+    /* no URL, no location state */
+  }
+  return value === 'denied' || value === 'steps' ? value : null;
 }
 
 function disabledControls() {
@@ -435,7 +745,8 @@ async function requestLocation(service, view) {
     // manifest is wrong (a bug). Either way the map stays usable.
     const message =
       result && result.reason === 'declined' ? t('map.declined') : t('map.notAvailable');
-    showNote(view, message);
+    if (result && result.reason === 'declined') showLocationDenied(view, message);
+    else showNote(view, message);
     toast(message, { error: true });
     return;
   }
@@ -454,8 +765,12 @@ async function requestLocation(service, view) {
   navigator.geolocation.getCurrentPosition(
     (position) => {
       const { latitude, longitude, accuracy } = position.coords;
-      service.setUserLocation({ lat: latitude, lng: longitude, accuracy });
-      service.centerOn({ lat: latitude, lng: longitude }, 14);
+      // A retry tapped before the map is live passes a null service: the note
+      // still shows, but there is no adapter yet to mark or centre.
+      if (service) {
+        service.setUserLocation({ lat: latitude, lng: longitude, accuracy });
+        service.centerOn({ lat: latitude, lng: longitude }, 14);
+      }
       showNote(
         view,
         typeof accuracy === 'number' && accuracy > 0
@@ -475,7 +790,8 @@ async function requestLocation(service, view) {
       const documentHolds = typeof window.usernode?.hasCapability === 'function'
         && window.usernode.hasCapability('geolocation');
       const message = denied && documentHolds ? t('map.denied') : t('map.locateFailed');
-      showNote(view, message);
+      if (denied && documentHolds) showLocationDenied(view, message);
+      else showNote(view, message);
       toast(message, { error: true });
     },
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
@@ -485,6 +801,62 @@ async function requestLocation(service, view) {
 function showNote(view, message) {
   view.note.style.display = '';
   view.note.textContent = message;
+  // Every non-denial outcome (a success, a reload-pending grant, an ordinary
+  // failure) clears the denied-location help and starts the denial count over.
+  if (view.locationHelp) {
+    view.locationHelp.style.display = 'none';
+    view.locationHelp.replaceChildren();
+  }
+  view.locationDenials = 0;
+}
+
+// A refusal is actionable: the first one offers to ask again, a second one
+// swaps the message for short steps to turn location on in the phone's
+// settings. Both keep the retry button so the person can try again after
+// changing the setting.
+function showLocationDenied(view, message) {
+  const count = (view.locationDenials || 0) + 1;
+  if (count === 1) {
+    // showNote resets the help and the count, so the count is set afterwards.
+    showNote(view, message);
+  } else if (view.note) {
+    // From the second refusal on, the steps replace the message.
+    view.note.style.display = 'none';
+  }
+  view.locationDenials = count;
+  if (!view.locationHelp) return;
+  view.locationHelp.replaceChildren(
+    ...(count === 1
+      ? []
+      : [
+          el('h2', {
+            class: 'text-[13px] font-semibold text-ink',
+            text: t('map.settingsTitle'),
+          }),
+          el(
+            'ol',
+            { class: 'list-decimal flex flex-col gap-1 pl-4' },
+            ['map.settingsStep1', 'map.settingsStep2', 'map.settingsStep3', 'map.settingsStep4'].map(
+              (key) => el('li', { text: t(key) }),
+            ),
+          ),
+        ]),
+    locationRetryButton(view),
+  );
+  view.locationHelp.style.display = '';
+}
+
+// The outline button the Saved screens use. It runs the exact flow the My
+// location control runs, so a retry behaves like a first ask.
+function locationRetryButton(view) {
+  return el('button', {
+    type: 'button',
+    class:
+      'self-start rounded-pill border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+    dataset: { locationRetry: 'true' },
+    text: t('map.allowLocation'),
+    onClick: () => requestLocation(activeService, view),
+  });
 }
 
 function toast(message, { error = false } = {}) {
@@ -598,6 +970,49 @@ function navigateForAssistant(nav, viewRef) {
   }
 }
 
+// ── weather (Phase 12G) ──────────────────────────────────────────────────
+
+// The Weather control opens the panel over the map and asks the shared
+// weather session for current conditions at the map centre. The session
+// decides whether a request may happen at all: with no authorized provider
+// (the W1 gate, the shipped state) it fetches nothing and the panel renders
+// the honest "Weather unavailable" state.
+// One panel at a time, like the assistant sheet's `opened` guard: a deep
+// link re-firing on a re-render must not stack a second surface over an
+// open one.
+let weatherPanelOpened = false;
+
+function openWeatherPanel(viewRef) {
+  if (weatherPanelOpened) return;
+  const config = getState().config || {};
+  setWeatherCapability(config.weather || null);
+  let surface = null;
+  const panel = createWeatherPanel({ onClose: () => surface && surface.dismiss() });
+  const body = el('div', { class: 'flex flex-col gap-3' }, [panel.root]);
+  surface = present(body, {
+    label: t('weather.title'),
+    onDismiss: () => {
+      weatherPanelOpened = false;
+      panel.destroy();
+    },
+  });
+  weatherPanelOpened = true;
+  // The centre comes from the live adapter when it exposes one (the map
+  // files are not touched by this phase, and today's adapter does not); with
+  // none, the session records that no honest centre exists and — with the
+  // capability unavailable, as it ships — nothing is fetched either way.
+  const service = viewRef && viewRef.service;
+  let center = null;
+  if (service && typeof service.getCenter === 'function') {
+    try {
+      center = service.getCenter();
+    } catch {
+      center = null;
+    }
+  }
+  requestWeather(center);
+}
+
 function assistantMount(searchSession, viewRef) {
   // Deep-link state for the assistant surface, read like demoState (both the
   // URL query and the query after the hash). `demo` is the staging-only
@@ -689,6 +1104,24 @@ function assistantMount(searchSession, viewRef) {
   return wrapper;
 }
 
+// The `?share=<id>` deep-link value for one incoming share, read from the URL
+// query or the query after the hash, exactly like assistantParam reads its
+// own parameter.
+function shareParam() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('share');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('share');
+    }
+  } catch {
+    /* no URL, no share param */
+  }
+  return value && String(value).trim() ? String(value).trim() : null;
+}
+
 // The assistant deep-link value ('demo' | 'unavailable'), read from the URL
 // query or the query after the hash, exactly like demoState reads ?map=.
 function assistantParam() {
@@ -715,6 +1148,23 @@ function assistantParam() {
   // enforced by the caller) opens the read-only assistant transcript.
   if (value === 'demo' || demo === '1') return 'demo';
   return null;
+}
+
+// The weather deep link ('open'), read like assistantParam reads the
+// assistant's: from the URL query or the query after the hash.
+function weatherParam() {
+  try {
+    let value = new URLSearchParams(window.location.search).get('weather');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('weather');
+    }
+    return value === 'open' ? 'open' : null;
+  } catch {
+    /* no URL, no weather state */
+    return null;
+  }
 }
 
 // The state lives in the query string, but this app hash-routes, so the

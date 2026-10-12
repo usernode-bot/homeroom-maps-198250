@@ -10,6 +10,11 @@ export function createUnsupportedAdapter({ kind, reason }) {
       rotation: false,
       touchGestures: false,
       accuracyCircle: false,
+      // Phase 12H: no live map, no 3D — every flag stays false so the screen
+      // never renders a 3D control in an unsupported state.
+      pitch: false,
+      buildings: false,
+      terrain: false,
     },
     unavailableReason: reason,
     unavailableKind: kind,
@@ -21,6 +26,10 @@ export function createUnsupportedAdapter({ kind, reason }) {
     zoomOut() {},
     resetNorth() {},
     setBearing() {},
+    // Phase 12H: inert 3D methods, same contract as the real adapter.
+    set3DEnabled() {},
+    setPitch() {},
+    setTerrainEnabled() {},
     setStyle() {},
     setUserLocation() {},
     setRoutes() {},

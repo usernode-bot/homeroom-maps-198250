@@ -94,6 +94,7 @@ export async function render(ctx) {
     tripsCard(),
     offlineAreasCard(),
     developerApiCard(),
+    sharingCard(),
     emptyState({
       title: t('profile.moreSoonTitle'),
       description: t('profile.moreSoonBody'),
@@ -156,6 +157,26 @@ function developerApiCard() {
         variant: 'secondary',
         attrs: { dataset: { openDeveloperApi: 'true' } },
         onClick: () => router.navigate('developer-api'),
+      }),
+    ]),
+  ]);
+}
+
+// Location Sharing — the Phase 12F entry. Same shape as the Trips and
+// Offline Areas cards. #/sharing is deep-linkable like every other
+// sub-screen.
+function sharingCard() {
+  return card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.sharingTitle') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.sharingBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('sharing.open'), {
+        variant: 'secondary',
+        attrs: { dataset: { openSharing: 'true' } },
+        onClick: () => router.navigate('sharing'),
       }),
     ]),
   ]);

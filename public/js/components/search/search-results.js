@@ -292,9 +292,10 @@ export function createSearchPanel({ session }) {
   return { root, update };
 }
 
-// The card that shows the place a suggestion was chosen for. Until the map
-// phase lands this is the honest end of the flow: it never pretends to show
-// a map, and "Remove" clears it.
+// The card that shows the place a suggestion was chosen for. The card itself
+// only describes the place (name, detail, coordinates); moving the map to it
+// is the Home screen's job through its session onSelect hook, and "Remove"
+// clears both the card and the map marker.
 export function selectedPlaceCard({ place, onRemove }) {
   const coords = `${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`;
   // Address line: composed from the structured parts in the country's

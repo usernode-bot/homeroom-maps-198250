@@ -38,6 +38,12 @@ import {
 } from '../services/routing-core.js';
 import { getCurrentLocation, LocationError } from '../services/location.js';
 import { createNavigation, NAV_STATE } from '../services/navigation.js';
+import { isOffline } from '../services/search.js';
+import { createTileStore } from '../services/offline-tiles.js';
+import {
+  OFFLINE_ROUTING_STAGE,
+  resolveOfflineRoutingCapability,
+} from '../services/offline-routing-capability.js';
 import { createMapService } from '../services/map.js';
 import { listReports } from '../services/community.js';
 import {
@@ -79,6 +85,26 @@ const ERROR_TITLES = {
   timeout: 'The route took too long',
   network: 'We could not reach the routing service',
   provider: 'Route calculation failed',
+};
+
+// Phase 12C: the honest states the Directions screen shows when a route is
+// asked for while the device is offline. Which one is true comes from the
+// offline routing capability gate (services/offline-routing-capability.js),
+// never from a fabricated route: no offline routing engine ships in this
+// build, so no offline answer can ever offer geometry, a distance or a
+// duration. The localized copy lives in the en/id locale files.
+const OFFLINE_ROUTING_TITLES = {
+  [OFFLINE_ROUTING_STAGE.DISABLED]: 'offline.routeDisabledTitle',
+  [OFFLINE_ROUTING_STAGE.UNSUPPORTED_BROWSER]: 'offline.routeUnsupportedTitle',
+  [OFFLINE_ROUTING_STAGE.NO_REGIONS]: 'offline.routeNoAreasTitle',
+  [OFFLINE_ROUTING_STAGE.UNAVAILABLE]: 'offline.routeNoRoadsTitle',
+};
+
+const OFFLINE_ROUTING_BODIES = {
+  [OFFLINE_ROUTING_STAGE.DISABLED]: 'offline.routeDisabledBody',
+  [OFFLINE_ROUTING_STAGE.UNSUPPORTED_BROWSER]: 'offline.routeUnsupportedBody',
+  [OFFLINE_ROUTING_STAGE.NO_REGIONS]: 'offline.routeNoAreasBody',
+  [OFFLINE_ROUTING_STAGE.UNAVAILABLE]: 'offline.routeNoRoadsBody',
 };
 
 export async function render(ctx) {
@@ -167,7 +193,9 @@ export async function render(ctx) {
   const calculateButton = button('Show route', {
     attrs: { dataset: { showRoute: 'true' } },
   });
-  calculateButton.addEventListener('click', () => session.calculate());
+  calculateButton.addEventListener('click', () => {
+    void guardedCalculate();
+  });
 
   const clearButton = button('Clear all', {
     variant: 'ghost',
@@ -198,6 +226,60 @@ export async function render(ctx) {
     ...session.getState(),
     phase: session.phase(),
   }), trafficLegend);
+
+  // ── offline routing states (Phase 12C) ───────────────────────────────────
+  // `Show route` and a `?navigate=1` deep link both go through this guard.
+  // Online, it is the session's ordinary calculate, unchanged. While the
+  // device is offline it renders the honest localized state instead of a
+  // request that could only fail, and makes no network call at all.
+  async function offlineRoutingStage() {
+    // Device-local only: the tile store read plus the config block. A store
+    // that cannot be read counts as no regions (fail closed).
+    let regions = [];
+    try {
+      regions = (await createTileStore({}).listRegions()) || [];
+    } catch {
+      regions = [];
+    }
+    const result = resolveOfflineRoutingCapability({ config, regions });
+    return (result && result.stage) || OFFLINE_ROUTING_STAGE.DISABLED;
+  }
+
+  function renderOfflineRoutingState(stage) {
+    // The gate cannot return `ready` in this build (no engine ships), so a
+    // stage without copy here falls back to the honest unavailable state.
+    const titleKey =
+      OFFLINE_ROUTING_TITLES[stage] || OFFLINE_ROUTING_TITLES[OFFLINE_ROUTING_STAGE.UNAVAILABLE];
+    const bodyKey =
+      OFFLINE_ROUTING_BODIES[stage] || OFFLINE_ROUTING_BODIES[OFFLINE_ROUTING_STAGE.UNAVAILABLE];
+    resultsSlot.replaceChildren(
+      el('div', { dataset: { offlineRoutingState: stage } }, [
+        errorState({
+          title: t(titleKey),
+          description: t(bodyKey),
+          // Retrying while offline cannot change the answer; the form above
+          // stays reachable, and going back online re-enables the button.
+        }),
+      ]),
+    );
+  }
+
+  async function guardedCalculate() {
+    const state = session.getState();
+    // Let the session's own local validation run first: a missing endpoint is
+    // refused before any fetch, offline or not, so the actionable error wins.
+    if (!state.origin || !state.destination) {
+      session.calculate();
+      return;
+    }
+    if (isOffline()) {
+      const stage = await offlineRoutingStage();
+      autoNavPending = false;
+      renderOfflineRoutingState(stage);
+      return;
+    }
+    session.calculate();
+  }
 
   // ── sync ─────────────────────────────────────────────────────────────────
   let lastWaypointCount = -1;
@@ -340,7 +422,7 @@ export async function render(ctx) {
     const state = session.getState();
     if (state.origin && state.destination) {
       autoNavPending = true;
-      session.calculate();
+      void guardedCalculate();
     } else {
       navControlsHost.replaceChildren(
         errorState({
