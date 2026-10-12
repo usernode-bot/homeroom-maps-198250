@@ -71,6 +71,12 @@ export default {
   'map.showing': 'Menampilkan lokasi Anda.',
   'map.locateFailed': 'Kami tidak dapat menentukan lokasi Anda saat ini. Silakan coba lagi.',
 
+  // Peta 3D (Fase 12H)
+  'map.3dTitle': 'Tampilan 3D',
+  'map.terrainTitle': 'Relief',
+  'map.terrainSr': 'Tampilkan ketinggian medan',
+  'map.terrainFailed': 'Relief tidak dapat dimuat. Peta tetap berfungsi tanpa itu.',
+
   // home
   'home.placesTitle': 'Tempat',
   'home.placesBody': 'Titik menarik, kontribusi peta, dan tempat tersimpan ada di Jelajah dan Profil.',
