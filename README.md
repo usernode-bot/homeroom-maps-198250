@@ -131,6 +131,21 @@ A global map and location platform, built together with its community.
   rendered. The single unlock is a verifiable `docs/tile-provider-rights.md`
   (provider, `bulk-download: permitted`, evidence URL) — nothing else, and no
   code change, enables downloads.
+- **Developer API (Phase 12K)** — a read-only, key-authenticated adapter at
+  `/api/v1` over the existing search, directions, places, community and
+  reports services: one error envelope, a capabilities document, pagination
+  and payload ceilings, and per-key rate limits, all calling the same
+  exported service functions the internal routes call (no internal route was
+  renamed or altered). Keys are personal, created and revoked on the
+  Developer API screen (`#/developer-api`, reached from Profile); the server
+  stores only a hash, so the full key is shown once at creation. Every
+  response carries attribution, projections strip private fields (author and
+  reporter ids, viewer blocks, drafts), and the `mine` view does not exist
+  through the API. External key issuance stays off the table: no
+  third-party issuance flow exists and none is planned here. The contract is
+  documented in `docs/developer-api.md` and `docs/openapi.yaml` (served at
+  `GET /api/v1/openapi.yaml`), with the operator switches (`API_ENABLED`,
+  `API_RATE_LIMIT_PER_MINUTE`, `API_MAX_KEYS_PER_USER`) in `dapp.json`.
 - **Error boundary and loading states** — a screen that throws shows the
   shared error state with a Try again action; fetches show a skeleton.
 - **Service interfaces** (`public/js/services/*`) with real implementations
@@ -139,9 +154,9 @@ A global map and location platform, built together with its community.
   documented placeholders for the stages that are still unbuilt, so no screen
   can fake map or community behaviour.
 - **Tests** — `npm test` runs the whole suite (`node --test`): search,
-  places, i18n, routing, navigation, community, saved places and the assistant.
-  The Postgres
-  suites (community, saved places, profile) need a database:
+  places, i18n, routing, navigation, community, saved places, the assistant
+  and the Developer API. The Postgres
+  suites (community, saved places, profile, API keys) need a database:
   `TEST_DATABASE_URL` (or the build worker's `INLOOP_DATABASE_URL`); without
   one they are skipped.
 

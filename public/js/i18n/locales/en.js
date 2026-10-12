@@ -462,6 +462,60 @@ export default {
   'offline.presetSize': 'About {size}',
   'profile.offlineTitle': 'Offline Areas',
   'profile.offlineBody': 'Download map areas for use without a connection.',
+  'profile.developerApiTitle': 'Developer API',
+  'profile.developerApiBody': 'Create API keys and read the public map data API.',
+
+  // developer-api (Phase 12K). The screen for creating, listing and revoking
+  // personal API keys for the read-only /api/v1 surface, plus honest cards
+  // about what that surface serves today. Hand-written, no em dashes.
+  'developerApi.open': 'Open',
+  'developerApi.title': 'Developer API',
+  'developerApi.intro':
+    'Read-only access to map data for your own scripts and integrations. Keys are free and personal: a key can read public data only, and it can never touch your saved places or account.',
+  'developerApi.signInTitle': 'Sign in to manage API keys',
+  'developerApi.signInBody':
+    'API keys belong to your account. Sign in to create, list and revoke yours.',
+  'developerApi.keysTitle': 'Your API keys',
+  'developerApi.keysIntro':
+    'Requests are limited to {perMinute} per minute per key. A directions request costs {cost} of those requests.',
+  'developerApi.emptyTitle': 'No API keys yet',
+  'developerApi.emptyBody': 'Create a key to start calling the API from your own scripts.',
+  'developerApi.create': 'Create API key',
+  'developerApi.createTitle': 'New API key',
+  'developerApi.nameLabel': 'Key name',
+  'developerApi.namePlaceholder': 'My scripts',
+  'developerApi.limitReached': 'You already have the maximum of {max} API keys. Revoke one first.',
+  'developerApi.keyShownOnceTitle': 'Copy your key now',
+  'developerApi.keyShownOnceBody':
+    'This is the only time the full key is shown. The app stores a hash of it, so it cannot be recovered later.',
+  'developerApi.copy': 'Copy',
+  'developerApi.copied': 'Copied',
+  'developerApi.copyFailed': 'Copying failed. Select the key and copy it by hand.',
+  'developerApi.done': 'Done',
+  'developerApi.revoke': 'Revoke',
+  'developerApi.revokeTitle': 'Revoke this key?',
+  'developerApi.revokeConfirm':
+    'Scripts using "{name}" will stop working immediately. This cannot be undone.',
+  'developerApi.revoked': 'Key revoked',
+  'developerApi.loadError': 'Could not load your API keys',
+  'developerApi.loadErrorBody': 'Check your connection and try again.',
+  'developerApi.quickStartTitle': 'Quick start',
+  'developerApi.quickStartBody':
+    'Send your key as a bearer token. Every endpoint answers with JSON, and errors use one shared shape.',
+  'developerApi.attribution':
+    'Map data is © OpenStreetMap contributors. Show that attribution wherever you use results from the API.',
+  'developerApi.offersTitle': 'What the API offers',
+  'developerApi.availableTitle': 'Available today',
+  'developerApi.notAvailableTitle': 'Not available yet',
+  'developerApi.offerSearch': 'Place search and suggestions',
+  'developerApi.offerDirections': 'Directions for the modes the routing provider serves',
+  'developerApi.offerCommunity': 'Public community proposals and reports',
+  'developerApi.offerPlaces': 'Place search from the connected place provider',
+  'developerApi.notOfferPlaces': 'Single-place details. The contract exists, but no place provider is connected.',
+  'developerApi.notOfferSearch': 'Place search and suggestions. No search provider is connected.',
+  'developerApi.notOfferDirections': 'Directions. No routing provider is connected.',
+  'developerApi.notOfferPrivate': 'Saved places, trips, location sharing and anything else private',
+  'developerApi.notOfferWrites': 'Writes of any kind. The API is read-only.',
 
   // offline search (Phase 12B). Results from downloaded areas are marked
   // Offline; the words Offline, Offline Areas, No results and Try again are

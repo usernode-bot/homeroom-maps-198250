@@ -483,5 +483,59 @@ export default {
   'offline.searchKindPlace': 'Tempat',
   'profile.offlineTitle': 'Area Offline',
   'profile.offlineBody': 'Unduh area peta untuk digunakan tanpa koneksi.',
+  'profile.developerApiTitle': 'API Pengembang',
+  'profile.developerApiBody': 'Buat kunci API dan baca API data peta publik.',
+
+  // developer-api (Phase 12K). Layar untuk membuat, melihat, dan mencabut
+  // kunci API pribadi untuk permukaan baca /api/v1, plus kartu jujur tentang
+  // apa yang dilayani permukaan itu hari ini. Ditulis tangan, tanpa em dash.
+  'developerApi.open': 'Buka',
+  'developerApi.title': 'API Pengembang',
+  'developerApi.intro':
+    'Akses baca-saja ke data peta untuk skrip dan integrasi Anda sendiri. Kunci gratis dan pribadi: kunci hanya bisa membaca data publik, dan tidak akan pernah menyentuh tempat tersimpan atau akun Anda.',
+  'developerApi.signInTitle': 'Masuk untuk mengelola kunci API',
+  'developerApi.signInBody':
+    'Kunci API milik akun Anda. Masuk untuk membuat, melihat, dan mencabut kunci Anda.',
+  'developerApi.keysTitle': 'Kunci API Anda',
+  'developerApi.keysIntro':
+    'Permintaan dibatasi {perMinute} per menit per kunci. Satu permintaan rute menghabiskan {cost} permintaan itu.',
+  'developerApi.emptyTitle': 'Belum ada kunci API',
+  'developerApi.emptyBody': 'Buat kunci untuk mulai memanggil API dari skrip Anda sendiri.',
+  'developerApi.create': 'Buat kunci API',
+  'developerApi.createTitle': 'Kunci API baru',
+  'developerApi.nameLabel': 'Nama kunci',
+  'developerApi.namePlaceholder': 'Skrip saya',
+  'developerApi.limitReached': 'Anda sudah mencapai batas maksimal {max} kunci API. Cabut satu dulu.',
+  'developerApi.keyShownOnceTitle': 'Salin kunci Anda sekarang',
+  'developerApi.keyShownOnceBody':
+    'Ini satu-satunya saat kunci lengkap ditampilkan. Aplikasi menyimpan hash-nya, jadi kunci tidak bisa dipulihkan nanti.',
+  'developerApi.copy': 'Salin',
+  'developerApi.copied': 'Tersalin',
+  'developerApi.copyFailed': 'Penyalinan gagal. Pilih kunci dan salin secara manual.',
+  'developerApi.done': 'Selesai',
+  'developerApi.revoke': 'Cabut',
+  'developerApi.revokeTitle': 'Cabut kunci ini?',
+  'developerApi.revokeConfirm':
+    'Skrip yang memakai "{name}" akan langsung berhenti bekerja. Tindakan ini tidak bisa dibatalkan.',
+  'developerApi.revoked': 'Kunci dicabut',
+  'developerApi.loadError': 'Kunci API Anda tidak dapat dimuat',
+  'developerApi.loadErrorBody': 'Periksa koneksi Anda dan coba lagi.',
+  'developerApi.quickStartTitle': 'Mulai cepat',
+  'developerApi.quickStartBody':
+    'Kirim kunci Anda sebagai bearer token. Setiap endpoint menjawab dengan JSON, dan galat memakai satu bentuk yang sama.',
+  'developerApi.attribution':
+    'Data peta © OpenStreetMap contributors. Tampilkan atribusi itu di mana pun Anda memakai hasil dari API.',
+  'developerApi.offersTitle': 'Yang ditawarkan API',
+  'developerApi.availableTitle': 'Tersedia hari ini',
+  'developerApi.notAvailableTitle': 'Belum tersedia',
+  'developerApi.offerSearch': 'Pencarian tempat dan saran',
+  'developerApi.offerDirections': 'Rute untuk mode yang dilayani penyedia rute',
+  'developerApi.offerCommunity': 'Usulan komunitas dan laporan publik',
+  'developerApi.offerPlaces': 'Pencarian tempat dari penyedia tempat yang tersambung',
+  'developerApi.notOfferPlaces': 'Detail satu tempat. Kontraknya ada, tetapi tidak ada penyedia tempat yang tersambung.',
+  'developerApi.notOfferSearch': 'Pencarian tempat dan saran. Tidak ada penyedia pencarian yang tersambung.',
+  'developerApi.notOfferDirections': 'Rute. Tidak ada penyedia rute yang tersambung.',
+  'developerApi.notOfferPrivate': 'Tempat tersimpan, perjalanan, berbagi lokasi, dan hal pribadi lainnya',
+  'developerApi.notOfferWrites': 'Penulisan apa pun. API ini hanya baca.',
 
 };

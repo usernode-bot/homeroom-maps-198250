@@ -1,0 +1,650 @@
+# Homeroom Maps — Developer API v1
+#
+# Hand-maintained on purpose: the API is nine endpoints and one envelope, and
+# a generator dependency is not justified for that (no OpenAPI package exists
+# in package.json). tests/api.openapi.test.js asserts every route registered
+# in api/index.js has a matching path entry here, so this document cannot
+# silently drift from the implementation. Keep the two in the same commit.
+#
+# Data terms: results and routes come from OpenStreetMap data under the ODbL.
+# You must show the attribution "© OpenStreetMap contributors" wherever you
+# display results, and you may not resell the results. Integrator cache
+# ceilings mirror the server's own: suggestions 5 minutes, search results
+# 24 hours, routes 10 minutes. No bulk redistribution.
+openapi: 3.1.0
+info:
+  title: Homeroom Maps API
+  version: '1.0'
+  description: |
+    Read-only map data and public community content for Homeroom Maps.
+
+    Authentication: send your key as a bearer token on every request.
+
+        Authorization: Bearer hm_live_…
+
+    Keys are created in the Homeroom Maps app by their owner; there is no
+    self-serve signup and no issuance endpoint. Rate limit: 60 requests a
+    minute per key (the directions endpoint costs 3 of those tokens). When
+    you exhaust it the API answers 429 rate_limited with a Retry-After
+    header; retry 429 and 5xx responses with exponential backoff and treat
+    4xx answers as your bug. There are no write endpoints, so every GET is
+    idempotent by construction.
+
+    Attribution: results come from OpenStreetMap data. You must show the
+    attribution "© OpenStreetMap contributors" wherever you display results.
+    Every response carries an `attribution` field naming the source.
+
+    Not available yet (and answered honestly, never faked): place details
+    until a place provider is connected (501 not_configured), business profiles,
+    transit, weather, traffic. Also anything private such as saved places,
+    trips, votes, and the mine view. Every error uses one envelope:
+    `{ "error": { "code": "…", "message": "…" } }`.
+
+    Scopes: every key today carries all five read scopes — search:read,
+    routing:read, places:read, community:read, reports:read. The scope check
+    exists so a future narrowed credential needs no migration; there are no
+    write scopes and no write endpoints.
+servers:
+  - url: /api/v1
+security:
+  - BearerKey: []
+components:
+  securitySchemes:
+    BearerKey:
+      type: http
+      scheme: bearer
+      description: An API key created in the Homeroom Maps app (hm_live_…).
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_query
+                - unsupported_mode
+                - missing_key
+                - invalid_key
+                - insufficient_scope
+                - not_found
+                - no_route
+                - rate_limited
+                - not_configured
+                - api_disabled
+                - provider_error
+                - timeout
+            message:
+              type: string
+    Attribution:
+      type: object
+      required: [attribution]
+      properties:
+        attribution:
+          type: string
+          description: The source you must display alongside the data.
+    SearchResult:
+      type: object
+      required: [id, kind, name, detail, lat, lon]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          description: country | region | city | town | village | suburb | street | address | landmark | poi | other
+        name:
+          type: string
+        localName:
+          type: [string, 'null']
+        detail:
+          type: string
+        address:
+          type: object
+          properties:
+            houseNumber: { type: [string, 'null'] }
+            street: { type: [string, 'null'] }
+            city: { type: [string, 'null'] }
+            state: { type: [string, 'null'] }
+            postcode: { type: [string, 'null'] }
+            country: { type: [string, 'null'] }
+            countryCode: { type: [string, 'null'] }
+        addressLine:
+          type: [string, 'null']
+        lat:
+          type: number
+        lon:
+          type: number
+    SearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/Attribution'
+        - type: object
+          required: [provider, results]
+          properties:
+            provider:
+              type: string
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/SearchResult'
+    Maneuver:
+      type: object
+      properties:
+        type: { type: [string, 'null'] }
+        modifier: { type: [string, 'null'] }
+        location:
+          type: [array, 'null']
+          items: { type: number }
+    RouteStep:
+      type: object
+      properties:
+        name: { type: [string, 'null'] }
+        ref: { type: [string, 'null'] }
+        distance: { type: [number, 'null'] }
+        duration: { type: [number, 'null'] }
+        maneuver:
+          $ref: '#/components/schemas/Maneuver'
+    RouteLeg:
+      type: object
+      properties:
+        distance: { type: [number, 'null'] }
+        duration: { type: [number, 'null'] }
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteStep'
+    Route:
+      type: object
+      required: [geometry]
+      properties:
+        geometry:
+          type: array
+          description: The drawn line, as [lng, lat] pairs.
+          items:
+            type: array
+            items: { type: number }
+        distance:
+          type: [number, 'null']
+          description: Metres.
+        duration:
+          type: [number, 'null']
+          description: Seconds.
+        summary: { type: [string, 'null'] }
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteLeg'
+    DirectionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Attribution'
+        - type: object
+          required: [provider, mode, routes]
+          properties:
+            provider:
+              type: string
+            mode:
+              type: string
+            routes:
+              type: array
+              items:
+                $ref: '#/components/schemas/Route'
+    Proposal:
+      allOf:
+        - $ref: '#/components/schemas/Attribution'
+        - type: object
+          required: [id, author, title, status, votes]
+          properties:
+            id: { type: string }
+            author:
+              type: object
+              required: [username]
+              properties:
+                username: { type: [string, 'null'] }
+            title: { type: string }
+            description: { type: string }
+            category: { type: string }
+            categoryLabel: { type: [string, 'null'] }
+            location:
+              type: [object, 'null']
+              properties:
+                name: { type: string }
+                lat: { type: number }
+                lng: { type: number }
+            attachments:
+              type: array
+              items: { type: string }
+            status:
+              type: string
+              description: open | under_review | accepted | rejected | implemented
+            statusLabel: { type: [string, 'null'] }
+            createdAt: { type: [string, 'null'], format: date-time }
+            updatedAt: { type: [string, 'null'], format: date-time }
+            publishedAt: { type: [string, 'null'], format: date-time }
+            statusChangedAt: { type: [string, 'null'], format: date-time }
+            votes:
+              type: object
+              required: [up, down, score]
+              properties:
+                up: { type: integer }
+                down: { type: integer }
+                score: { type: integer }
+            distanceKm:
+              type: [number, 'null']
+            history:
+              type: array
+              items:
+                type: object
+                properties:
+                  from: { type: [string, 'null'] }
+                  to: { type: string }
+                  toLabel: { type: [string, 'null'] }
+                  actor: { type: [string, 'null'] }
+                  at: { type: [string, 'null'], format: date-time }
+    ProposalFeed:
+      allOf:
+        - $ref: '#/components/schemas/Attribution'
+        - type: object
+          required: [view, items, hasMore]
+          properties:
+            view: { type: string }
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Proposal'
+            hasMore: { type: boolean }
+            nextOffset: { type: [integer, 'null'] }
+            near:
+              type: [object, 'null']
+              properties:
+                lat: { type: number }
+                lng: { type: number }
+            radiusKm: { type: [number, 'null'] }
+    Report:
+      allOf:
+        - $ref: '#/components/schemas/Attribution'
+        - type: object
+          required: [id, type, lat, lng, reporter, status, reactions]
+          properties:
+            id: { type: string }
+            type: { type: string }
+            typeLabel: { type: [string, 'null'] }
+            description: { type: string }
+            place:
+              type: [object, 'null']
+              properties:
+                id: { type: string }
+                provider: { type: string }
+            lat: { type: number }
+            lng: { type: number }
+            reporter:
+              type: object
+              required: [username]
+              properties:
+                username: { type: [string, 'null'] }
+            status: { type: string }
+            statusLabel: { type: [string, 'null'] }
+            effectiveStatus: { type: [string, 'null'] }
+            expiresAt: { type: [string, 'null'], format: date-time }
+            createdAt: { type: [string, 'null'], format: date-time }
+            updatedAt: { type: [string, 'null'], format: date-time }
+            reactions:
+              type: object
+              required: [confirm, disagree]
+              properties:
+                confirm: { type: integer }
+                disagree: { type: integer }
+            distanceKm:
+              type: [number, 'null']
+            history:
+              type: array
+              items:
+                type: object
+                properties:
+                  from: { type: [string, 'null'] }
+                  to: { type: string }
+                  toLabel: { type: [string, 'null'] }
+                  actor: { type: [string, 'null'] }
+                  at: { type: [string, 'null'], format: date-time }
+    ReportFeed:
+      allOf:
+        - $ref: '#/components/schemas/Attribution'
+        - type: object
+          required: [view, items, hasMore]
+          properties:
+            view: { type: string }
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Report'
+            hasMore: { type: boolean }
+            nextOffset: { type: [integer, 'null'] }
+            near:
+              type: [object, 'null']
+              properties:
+                lat: { type: number }
+                lng: { type: number }
+            radiusKm: { type: [number, 'null'] }
+    Capabilities:
+      allOf:
+        - $ref: '#/components/schemas/Attribution'
+        - type: object
+          required: [version, service, capabilities]
+          properties:
+            version: { type: string }
+            service: { type: string }
+            capabilities:
+              type: object
+              properties:
+                search:
+                  type: object
+                  properties:
+                    available: { type: boolean }
+                    provider: { type: [string, 'null'] }
+                    endpoints: { type: array, items: { type: string } }
+                directions:
+                  type: object
+                  properties:
+                    available: { type: boolean }
+                    provider: { type: [string, 'null'] }
+                    modes: { type: array, items: { type: string } }
+                    endpoints: { type: array, items: { type: string } }
+                places:
+                  type: object
+                  properties:
+                    available: { type: boolean }
+                    provider: { type: [string, 'null'] }
+                    endpoints: { type: array, items: { type: string } }
+                community:
+                  type: object
+                  properties:
+                    available: { type: boolean }
+                    endpoints: { type: array, items: { type: string } }
+                reports:
+                  type: object
+                  properties:
+                    available: { type: boolean }
+                    endpoints: { type: array, items: { type: string } }
+            notAvailable:
+              type: array
+              items: { type: string }
+            rateLimit:
+              type: object
+              properties:
+                requestsPerMinute: { type: integer }
+                directionsCost: { type: integer }
+            scopes:
+              type: array
+              items: { type: string }
+            docs: { type: string }
+  responses:
+    Error:
+      description: The one error envelope. 429 responses always carry Retry-After.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Unknown id, or (for directions) no route between the points.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+tags:
+  - name: search
+  - name: routing
+  - name: places
+  - name: community
+  - name: meta
+paths:
+  /capabilities:
+    get:
+      tags: [meta]
+      summary: Which capabilities are live, which are not yet, and the limits
+      responses:
+        '200':
+          description: The capability document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /search:
+    get:
+      tags: [search]
+      summary: Place search (OpenStreetMap data)
+      description: >-
+        Same contract as the app's own search. Query length is capped at 200
+        characters, limit at 20. Results may be cached by the caller for up
+        to 24 hours.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 200 } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 20 } }
+        - { name: bbox, in: query, schema: { type: string }, description: 'minLon,minLat,maxLon,maxLat' }
+        - { name: near, in: query, schema: { type: string }, description: 'lat,lon' }
+        - { name: radius, in: query, schema: { type: number }, description: Kilometres around near. }
+        - { name: lang, in: query, schema: { type: string }, description: BCP-47 tag. }
+      responses:
+        '200':
+          description: Normalized results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+  /search/suggest:
+    get:
+      tags: [search]
+      summary: Autocomplete suggestions
+      description: Same parameters as /search. Results may be cached for up to 5 minutes.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 200 } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 20 } }
+        - { name: near, in: query, schema: { type: string } }
+        - { name: radius, in: query, schema: { type: number } }
+        - { name: lang, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Normalized suggestions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+  /directions:
+    get:
+      tags: [routing]
+      summary: Routes between two points
+      description: >-
+        Served travel modes only (the capability document lists them); an
+        unserved mode answers 400 unsupported_mode, no route answers 404
+        no_route. Costs 3 tokens of the per-key quota. Routes may be cached
+        for up to 10 minutes.
+      parameters:
+        - { name: origin, in: query, required: true, schema: { type: string }, description: 'lat,lon' }
+        - { name: destination, in: query, required: true, schema: { type: string }, description: 'lat,lon' }
+        - { name: waypoints, in: query, schema: { type: string }, description: 'lat,lon|lat,lon|…' }
+        - { name: mode, in: query, schema: { type: string }, description: Defaults to driving. }
+      responses:
+        '200':
+          description: The route or routes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectionsResponse'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+        '504': { $ref: '#/components/responses/Error' }
+  /places:
+    get:
+      tags: [places]
+      summary: Place summaries by term and/or location
+      description: >-
+        Answers 501 not_configured until a place provider is connected — the
+        honest, documented deferred state, not a fabricated result.
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: near, in: query, schema: { type: string } }
+        - { name: radius, in: query, schema: { type: number } }
+        - { name: bbox, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 20 } }
+        - { name: lang, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Place summaries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attribution'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '501': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+  /places/{id}:
+    get:
+      tags: [places]
+      summary: One place, summary depth
+      description: >-
+        Answers 501 not_configured until a place provider is connected.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: lang, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attribution'
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/Error' }
+        '501': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+  /community/proposals:
+    get:
+      tags: [community]
+      summary: Public community proposals
+      description: >-
+        Views: recent (default), popular, implemented, nearby. The mine view
+        is refused (400): an API key is not your browser session. Drafts and
+        hidden proposals never appear. Vote tallies are live counts, never
+        stored counters. Page limit is capped at 20.
+      parameters:
+        - { name: view, in: query, schema: { type: string, enum: [recent, popular, implemented, nearby] } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: near, in: query, schema: { type: string }, description: Required for view=nearby. 'lat,lng' }
+        - { name: radius, in: query, schema: { type: number }, description: Kilometres around near. }
+      responses:
+        '200':
+          description: The public feed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalFeed'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+  /community/proposals/{id}:
+    get:
+      tags: [community]
+      summary: One public proposal with its status history
+      description: Drafts are never served through the API (404), including your own.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The proposal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Proposal'
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+  /reports:
+    get:
+      tags: [community]
+      summary: Public reports
+      description: >-
+        Views: recent (default), nearby. The mine view is refused (400).
+        Expired-report rules pass through unchanged; pass
+        includeExpired=true to ask for the full history. Reaction identities
+        are never exposed — only the public tallies.
+      parameters:
+        - { name: view, in: query, schema: { type: string, enum: [recent, nearby] } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 20 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: near, in: query, schema: { type: string }, description: Required for view=nearby. 'lat,lng' }
+        - { name: radius, in: query, schema: { type: number } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: placeId, in: query, schema: { type: string } }
+        - { name: includeExpired, in: query, schema: { type: string, enum: ['true', '1'] } }
+      responses:
+        '200':
+          description: The public feed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportFeed'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+  /reports/{id}:
+    get:
+      tags: [community]
+      summary: One public report with its status history
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+  /openapi.yaml:
+    get:
+      tags: [meta]
+      summary: This document
+      responses:
+        '200':
+          description: The OpenAPI document itself, as YAML.
+          content:
+            text/yaml:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }

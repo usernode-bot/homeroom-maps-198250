@@ -222,6 +222,28 @@ const PLACE_PROVIDER = (process.env.PLACE_PROVIDER || '')
   .trim()
   .toLowerCase();
 
+// ── Developer API (Phase 12K) ─────────────────────────────────────────────
+// Operator knobs for the read-only /api/v1 surface. All three default to the
+// values the change ships with, in staging and production alike — they only
+// ever narrow or switch the API off, never alter what it serves:
+//   API_ENABLED=0            the kill switch: every v1 answer becomes 503
+//                            api_disabled (the documented emergency stop).
+//   API_RATE_LIMIT_PER_MINUTE  the per-key token-bucket capacity and burst
+//                            (default 60; /api/v1/directions costs 3 tokens).
+//   API_MAX_KEYS_PER_USER    how many ACTIVE keys one person may hold
+//                            (default 5; revoking frees a slot).
+const API_ENABLED = !/^(false|0|no|off)$/i.test(
+  String(process.env.API_ENABLED || 'true').trim(),
+);
+const API_RATE_LIMIT_PER_MINUTE = Math.max(
+  1,
+  Number.parseInt(process.env.API_RATE_LIMIT_PER_MINUTE || '60', 10) || 60,
+);
+const API_MAX_KEYS_PER_USER = Math.max(
+  1,
+  Number.parseInt(process.env.API_MAX_KEYS_PER_USER || '5', 10) || 5,
+);
+
 // ── AI assistant (Phase 11) ───────────────────────────────────────────────
 // The ONLY AI path is the platform's LLM proxy. Neither value below is a
 // third-party key: the platform injects both in production and injects
@@ -256,6 +278,9 @@ module.exports = {
   OSRM_PROFILES,
   COMMUNITY_REVIEWERS,
   PLACE_PROVIDER,
+  API_ENABLED,
+  API_RATE_LIMIT_PER_MINUTE,
+  API_MAX_KEYS_PER_USER,
   LLM_PROXY_URL,
   LLM_PROXY_TOKEN,
   LLM_ENABLED,
