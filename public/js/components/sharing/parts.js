@@ -160,7 +160,10 @@ export function recipientRow(recipient) {
 }
 
 // "Expires in 42 min" for the owner's card, from the server's own expiry.
-export function expiryLine(session, { t: translate }) {
+// The second parameter is optional: a caller that omits it (the sharing
+// screen's renderOutgoing does) gets the shared t(), so a one-argument call
+// can never break the whole screen again.
+export function expiryLine(session, { t: translate } = {}) {
   const translateFn = translate || t;
   if (!session || !session.expiresAt) return null;
   const seconds = (new Date(session.expiresAt).getTime() - Date.now()) / 1000;

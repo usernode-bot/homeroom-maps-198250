@@ -247,6 +247,26 @@ test('the consent line names the people and the end time, and nothing else', () 
   );
 });
 
+test('expiryLine works with one argument (regression: an active share broke the whole screen)', async () => {
+  // The screen's renderOutgoing calls expiryLine(session) with no second
+  // argument. Before the fix the destructure threw a TypeError, render()
+  // died, and the app's error boundary replaced the screen — so the active
+  // share card and its Stop button could never appear.
+  const parts = await import('../public/js/components/sharing/parts.js');
+  const session = {
+    id: '7',
+    expiresAt: new Date(Date.now() + 42 * 60_000).toISOString(),
+  };
+  const line = parts.expiryLine(session);
+  assert.equal(typeof line, 'string');
+  assert.match(line, /^Expires in .+ min$/);
+
+  // The explicit form still works, and no expiry still reads as ended.
+  assert.match(parts.expiryLine(session, { t: fakeT }), /^sharing\.expiresIn:/);
+  assert.equal(parts.expiryLine(null), null);
+  assert.equal(parts.expiryLine({ id: '7' }), null);
+});
+
 test('the device status line maps every loop state to its words', () => {
   const L = core.SHARING_LOOP;
   assert.equal(core.deviceStatusText(null, { t: fakeT }), null);
@@ -258,4 +278,94 @@ test('the device status line maps every loop state to its words', () => {
     'sharing.locationOffTitle',
   );
   assert.equal(core.deviceStatusText({ state: L.ENDED }, { t: fakeT }), 'sharing.sessionEndedNote');
+});
+
+// ── startErrorCopy: why starting a share failed, as i18n keys ──────────────
+
+function locationError(reason) {
+  const err = new Error('copy does not matter here');
+  err.name = 'LocationError';
+  err.reason = reason;
+  return err;
+}
+
+function apiError(code, status) {
+  const err = new Error('server English does not matter here');
+  err.name = 'ApiError';
+  err.code = code;
+  if (status != null) err.status = status;
+  return err;
+}
+
+test('startErrorCopy maps every LocationError reason from the table', () => {
+  // A denial is a person's decision, never "GPS failed": the copy explains
+  // why location is needed and asks them to allow it.
+  for (const reason of ['declined', 'denied', 'not_declared']) {
+    assert.deepEqual(core.startErrorCopy(locationError(reason)), {
+      titleKey: 'sharing.locationOffTitle',
+      bodyKey: 'sharing.locationDeniedBody',
+    }, `reason ${reason}`);
+  }
+  // A slow or empty fix is a device problem, not a decision.
+  for (const reason of ['timeout', 'unavailable', 'no_geolocation', 'ask_failed']) {
+    assert.deepEqual(core.startErrorCopy(locationError(reason)), {
+      titleKey: 'sharing.locationFailedTitle',
+      bodyKey: 'sharing.locationFailedBody',
+    }, `reason ${reason}`);
+  }
+  // Just granted, frame about to reload: the button stays down, the copy
+  // says to tap once more afterwards.
+  assert.deepEqual(core.startErrorCopy(locationError('reopening')), {
+    titleKey: 'sharing.locationReopeningTitle',
+    bodyKey: 'sharing.locationReopeningBody',
+  });
+  // Standalone load, no shell: the platform is needed.
+  assert.deepEqual(core.startErrorCopy(locationError('no_shell')), {
+    titleKey: 'sharing.locationOffTitle',
+    bodyKey: 'sharing.noShellBody',
+  });
+});
+
+test('startErrorCopy maps every ApiError code, and unknown errors get the honest fallback', () => {
+  assert.deepEqual(core.startErrorCopy(apiError('network_error', 0)), {
+    titleKey: 'sharing.startFailedTitle',
+    bodyKey: 'sharing.startNetworkBody',
+  });
+  assert.deepEqual(core.startErrorCopy(apiError('rate_limited', 429)), {
+    titleKey: 'sharing.startFailedTitle',
+    bodyKey: 'sharing.startRateLimitedBody',
+  });
+  assert.deepEqual(core.startErrorCopy(apiError('recipients_unavailable', 503)), {
+    titleKey: 'sharing.startFailedTitle',
+    bodyKey: 'sharing.startRecipientsBody',
+  });
+  // Validation, 5xx and anything unrecognised: the generic server body, so a
+  // raw English err.message never reaches the card.
+  assert.deepEqual(core.startErrorCopy(apiError('validation_error', 400)), {
+    titleKey: 'sharing.startFailedTitle',
+    bodyKey: 'sharing.startServerBody',
+  });
+  assert.deepEqual(core.startErrorCopy(apiError('http_error', 500)), {
+    titleKey: 'sharing.startFailedTitle',
+    bodyKey: 'sharing.startServerBody',
+  });
+  assert.deepEqual(core.startErrorCopy(new Error('something else entirely')), {
+    titleKey: 'sharing.startFailedTitle',
+    bodyKey: 'sharing.startServerBody',
+  });
+  assert.deepEqual(core.startErrorCopy(null), {
+    titleKey: 'sharing.startFailedTitle',
+    bodyKey: 'sharing.startServerBody',
+  });
+});
+
+test('startErrorCopy never maps a denial to GPS copy or the other way round', () => {
+  for (const reason of ['declined', 'denied', 'not_declared']) {
+    const copy = core.startErrorCopy(locationError(reason));
+    assert.notEqual(copy.bodyKey, 'sharing.locationFailedBody');
+  }
+  for (const reason of ['timeout', 'unavailable', 'no_geolocation']) {
+    const copy = core.startErrorCopy(locationError(reason));
+    assert.notEqual(copy.bodyKey, 'sharing.locationDeniedBody');
+  }
 });

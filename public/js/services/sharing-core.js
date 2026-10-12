@@ -67,6 +67,40 @@ export function expiresInLabel(seconds, { t }) {
   return t('sharing.expiresIn', { age });
 }
 
+// Why starting a share failed, as i18n keys — the pure half of the start
+// sheet's error card. Takes the thrown error (a LocationError with `reason`,
+// an ApiError with `code`, or anything else) and never touches DOM or i18n,
+// like every other helper here. The screen renders { titleKey, bodyKey }
+// through t(), so a failure is always named in the app's own words.
+export function startErrorCopy(err) {
+  const reason = err && err.reason;
+  const code = err && err.code;
+  // A person's decision (or the platform's): say what to do about it.
+  if (reason === 'declined' || reason === 'denied' || reason === 'not_declared') {
+    return { titleKey: 'sharing.locationOffTitle', bodyKey: 'sharing.locationDeniedBody' };
+  }
+  if (reason === 'timeout' || reason === 'unavailable' || reason === 'no_geolocation' || reason === 'ask_failed') {
+    return { titleKey: 'sharing.locationFailedTitle', bodyKey: 'sharing.locationFailedBody' };
+  }
+  if (reason === 'reopening') {
+    return { titleKey: 'sharing.locationReopeningTitle', bodyKey: 'sharing.locationReopeningBody' };
+  }
+  if (reason === 'no_shell') {
+    return { titleKey: 'sharing.locationOffTitle', bodyKey: 'sharing.noShellBody' };
+  }
+  // The POST itself failed: name the cause the server (or the network) gave.
+  if (code === 'network_error') {
+    return { titleKey: 'sharing.startFailedTitle', bodyKey: 'sharing.startNetworkBody' };
+  }
+  if (code === 'rate_limited') {
+    return { titleKey: 'sharing.startFailedTitle', bodyKey: 'sharing.startRateLimitedBody' };
+  }
+  if (code === 'recipients_unavailable') {
+    return { titleKey: 'sharing.startFailedTitle', bodyKey: 'sharing.startRecipientsBody' };
+  }
+  return { titleKey: 'sharing.startFailedTitle', bodyKey: 'sharing.startServerBody' };
+}
+
 // The consent line in the start sheet, composed from the chosen people and
 // the chosen duration's end time. Pure composition — the screen supplies the
 // formatted end time.
