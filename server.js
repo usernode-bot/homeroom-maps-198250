@@ -6,12 +6,15 @@ const {
   IS_STAGING,
   PORT,
   PLATFORM_ORIGIN,
+  PLATFORM_API_BASE,
   JWT_PUBLIC_KEY,
   APP_AUDIENCE,
   PUBLIC_DIR,
   resolveMapConfig,
   COMMUNITY_REVIEWERS,
+  LLM_PROXY_TOKEN,
   LLM_ENABLED,
+  LOCATION_SHARING_ENABLED,
 } = require('./config');
 const searchApi = require('./search');
 const { createPolicies } = require('./community/policies');
@@ -21,7 +24,12 @@ const { parseReviewers } = require('./community/model');
 const { createReportsStore } = require('./reports/store');
 const { createReportsRouter } = require('./reports/routes');
 const { createReputationStore } = require('./community/reputation-store');
+const { createSharingStore } = require('./sharing/store');
+const { createSharingRouter } = require('./sharing/routes');
+const { createMembersClient } = require('./sharing/members');
 const placesApi = require('./places');
+const weatherApi = require('./weather');
+const { resolveWeatherConfig } = require('./weather/server-config');
 const { firstAcceptLanguage } = require('./search/normalize');
 const routingApi = require('./routing');
 const { createStore: createTripStore } = require('./trips/store');
@@ -33,6 +41,7 @@ const { createAnthropicProxy } = require('./assistant/provider');
 const { createAssistantRouter } = require('./assistant/routes');
 const { resolveOfflineConfig } = require('./offline');
 const { resolveOfflineSearchConfig } = require('./offline/search-config');
+const { resolveTrafficConfig } = require('./traffic');
 
 const app = express();
 const port = PORT;
@@ -73,6 +82,19 @@ const reportsStore = createReportsStore({ pool, policies: communityPolicies });
 // later slices of the approved spec.
 const reputationStore = createReputationStore({ pool });
 reputationStore.register(communityPolicies);
+
+// Location sharing (Phase 12F): one active share per person, recipients from
+// the platform's real member roster, current position only. Both tables are
+// staging:private, so staging starts with them empty; the demo state is
+// client-side canned data and nothing here seeds the visitor. `members` is
+// the server-side client for the platform's member roster and user
+// directory, authenticated with the caller's forwarded token (plus the app
+// token in production) and caching the roster for 60 s.
+const sharingStore = createSharingStore({ pool });
+const sharingMembers = createMembersClient({
+  platformApiBase: PLATFORM_API_BASE,
+  appToken: LLM_PROXY_TOKEN,
+});
 
 // AI assistant (Phase 11). The ONLY AI path is the platform LLM proxy,
 // enabled only when BOTH USERNODE_LLM_PROXY_URL and USERNODE_LLM_PROXY_TOKEN
@@ -212,6 +234,18 @@ app.get('/favicon.ico', (_req, res) => res.status(204).end());
 // OpenFreeMap — `offline.downloads.enabled` is false, `blocker` names B2,
 // and no presets are offered. map.capabilities.offline and features.offline
 // mirror that same effective value, so every surface reads one truth.
+// The `weather` block (Phase 12G) is the same signal for current conditions
+// at the map centre. With no weather adapter implemented and none
+// authorized under the W1 gate, it always reads
+//   { configured: false, provider: null, blocker: 'W1', reason: ... }
+// and the client renders the honest "Weather unavailable" state. The
+// features.weather flag mirrors it, so every surface reads one truth.
+// The `traffic` block (Phase 12D) reports the live-traffic capability
+// resolved by traffic/index.js: while the live-traffic permission gate (T1)
+// is closed — no provider is chosen, no terms accepted, no rights documented
+// — `traffic.enabled` is false, `blocker` names T1, and no adapter exists.
+// map.capabilities.traffic and features.traffic mirror that same effective
+// value, so every surface reads one truth.
 app.get('/api/config', (_req, res) => {
   const { mapProvider, map } = resolveMapConfig();
   const routing = routingApi.resolveRoutingConfig();
@@ -221,23 +255,32 @@ app.get('/api/config', (_req, res) => {
   // searching already-stored regions is a device-local read. map.capabilities
   // .offline and features.offline keep their Phase 12A values untouched.
   const offlineSearch = resolveOfflineSearchConfig();
+  const weather = resolveWeatherConfig();
+  const traffic = resolveTrafficConfig();
   res.json({
     appName: 'Homeroom Maps',
     environment: IS_STAGING ? 'staging' : 'production',
     mapProvider,
-    map: { ...map, capabilities: { ...map.capabilities, offline: offline.offline } },
+    map: {
+      ...map,
+      capabilities: { ...map.capabilities, offline: offline.offline, traffic: traffic.enabled },
+    },
     searchProvider: searchApi.activeProviderName(),
     routing,
     placeProvider: placesApi.activeProviderName(),
     offline: { ...offline, search: offlineSearch },
+    weather,
+    traffic,
     features: {
       map: Boolean(map.configured),
       search: true,
       directions: Boolean(routing.configured),
       communityVoting: true,
       ai: Boolean(LLM_ENABLED),
-      traffic: false,
+      traffic: traffic.enabled,
       offline: offline.offline,
+      locationSharing: Boolean(LOCATION_SHARING_ENABLED),
+      weather: Boolean(weather.configured),
     },
   });
 });
@@ -360,6 +403,16 @@ app.use(
   '/api/reports',
   createReportsRouter({ store: reportsStore, reviewers: parseReviewers(COMMUNITY_REVIEWERS) }),
 );
+// Location sharing (Phase 12F). One mount line; the routes are exhaustive
+// (see sharing/routes.js) and the store enforces ownership in its SQL.
+app.use(
+  '/api/sharing',
+  createSharingRouter({
+    store: sharingStore,
+    members: sharingMembers,
+    enabled: LOCATION_SHARING_ENABLED,
+  }),
+);
 
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
@@ -412,6 +465,47 @@ app.get('/api/places', (req, res) =>
     })));
 app.get('/api/places/:id', (req, res) =>
   handlePlaces(req, res, ({ lang }) => placesApi.getPlaceDetails(req.params.id, { lang })));
+
+// Weather — the one read route of the weather service (weather/index.js).
+// GET under /api/, so the auth gate above covers it; a provider key never
+// leaves the server. The typed error codes from weather/provider.js map to
+// HTTP statuses here and use the app's standard JSON error shape, so the
+// client's apiGet() turns them into typed ApiErrors for free. With no
+// weather adapter implemented and none authorized under the W1 gate, every
+// call answers an honest 501 (not_configured) rather than fabricated
+// weather. `timeout` gets its own 504 deliberately: weather is
+// time-sensitive, so "no answer in time" is its own state in the panel.
+const WEATHER_ERROR_STATUS = {
+  invalid_request: 400,
+  not_configured: 501,
+  rate_limited: 429,
+  timeout: 504,
+};
+
+app.get('/api/weather/current', async (req, res) => {
+  try {
+    // Language resolution order, same as search and places: explicit query
+    // param, then the signed-in user's platform locale (JWT claim), then
+    // Accept-Language, then omit and let the provider default.
+    const lang =
+      req.query.lang ||
+      (req.user && req.user.locale) ||
+      firstAcceptLanguage(req.headers['accept-language']) ||
+      null;
+    const out = await weatherApi.run({
+      lat: req.query.lat,
+      lng: req.query.lng,
+      lang,
+    });
+    res.json(out);
+  } catch (err) {
+    const code = err && err.code ? err.code : 'provider_error';
+    console.warn(`[weather] ${code}: ` + (err && err.message));
+    res.status(WEATHER_ERROR_STATUS[code] || 502).json({
+      error: { code, message: (err && err.message) || 'The weather lookup failed.' },
+    });
+  }
+});
 
 // Saved places (Phase 7) — the real router replacing the 501 stub this path
 // used to answer. GET /api/saved and GET /api/profile are public reads only
@@ -509,8 +603,9 @@ app.get('*', (req, res) => {
 
 async function start() {
   // Idempotent boot migration: the community tables (all staging:private),
-  // the Phase 7 saved-places tables, and the report tables (reports and
+  // the Phase 7 saved-places tables, the report tables (reports and
   // report_status_events public, the reaction and flag tables
+  // staging:private), and the Phase 12F location-sharing tables (both
   // staging:private). Place and map tables arrive with their features in
   // later stages. The starter template's `presses` table is intentionally
   // NOT created here (a database that already has it keeps it; nothing
@@ -523,6 +618,7 @@ async function start() {
   await reportsStore.migrate();
   await reputationStore.migrate();
   if (IS_STAGING) await reportsStore.seedStaging();
+  await sharingStore.migrate();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
   server.keepAliveTimeout = 75_000;
