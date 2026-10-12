@@ -71,6 +71,12 @@ export default {
   'map.showingAccuracy': 'Showing your location (accurate to about {distance}).',
   'map.showing': 'Showing your location.',
   'map.locateFailed': 'We could not determine your location right now. Please try again.',
+  'map.allowLocation': 'Allow location',
+  'map.settingsTitle': "Turn on location in your phone's settings",
+  'map.settingsStep1': "Open your phone's Settings app.",
+  'map.settingsStep2': 'Go to Location (on iPhone: Privacy & Security, then Location Services).',
+  'map.settingsStep3': 'Allow location for the browser or Homeroom app you use.',
+  'map.settingsStep4': 'Come back here and tap Allow location. If Homeroom asks, choose Allow.',
   'map.placeNoPosition': 'This place has no valid position, so the map stays where it is.',
 
   // 3D map (Phase 12H)

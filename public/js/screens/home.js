@@ -224,6 +224,16 @@ export async function render(ctx) {
   });
   note.style.display = 'none';
 
+  // The denied-location help sits under the note: the retry button on its own
+  // after a first refusal, and the phone-settings steps after a second. It is
+  // a separate div because the steps are an `ol`, which cannot sit inside the
+  // note's `p`.
+  const locationHelp = el('div', {
+    class: 'flex flex-col gap-2 px-1 text-xs text-muted',
+    dataset: { locationHelp: 'true' },
+  });
+  locationHelp.style.display = 'none';
+
   const attribution = el('p', {
     class:
       'px-1 text-[11px] leading-relaxed text-muted [&_a]:text-brand [&_a]:underline',
@@ -251,6 +261,7 @@ export async function render(ctx) {
 
     container,
     note,
+    locationHelp,
     attribution,
 
     assistantMount(session, viewRef),
@@ -303,12 +314,25 @@ export async function render(ctx) {
   // what satisfies the data licence when tiles never arrive.
   renderAttribution(attribution, config.attribution || DEFAULT_ATTRIBUTION);
 
-  const view = { container, surface, overlay, controls, note, viewRef };
+  const view = { container, surface, overlay, controls, note, locationHelp, viewRef, locationDenials: 0 };
 
   // A `?share=<id>` deep link (Phase 12F): one incoming share opened straight
   // onto the map. Held on the view and applied once the map is ready.
   const shareId = shareParam();
   if (shareId) view.pendingShareId = shareId;
+
+  // A `?location=denied|steps` deep link reaches the denied-location help
+  // without a refusal: one denial for `denied`, two for `steps`. No permission
+  // is asked at boot — the ask still happens at the moment of need — and the
+  // button in that state runs the real permission flow.
+  if (!force) {
+    const locationState = locationParam();
+    if (locationState === 'denied') showLocationDenied(view, t('map.denied'));
+    else if (locationState === 'steps') {
+      showLocationDenied(view, t('map.denied'));
+      showLocationDenied(view, t('map.denied'));
+    }
+  }
 
   // A forced demo state short-circuits the real path only for the state it
   // names; every other route mounts the live adapter through the service.
@@ -632,6 +656,23 @@ function trafficParam() {
   return value === 'open' ? 'open' : null;
 }
 
+// The denied-location deep link, read the same way: `denied` shows one refusal,
+// `steps` shows the phone-settings steps (a second refusal).
+function locationParam() {
+  let value = null;
+  try {
+    value = new URLSearchParams(window.location.search).get('location');
+    if (!value) {
+      const hash = window.location.hash.replace(/^#/, '');
+      const q = hash.indexOf('?');
+      if (q >= 0) value = new URLSearchParams(hash.slice(q + 1)).get('location');
+    }
+  } catch {
+    /* no URL, no location state */
+  }
+  return value === 'denied' || value === 'steps' ? value : null;
+}
+
 function disabledControls() {
   return el('div', { class: 'pointer-events-auto' }, [
     el(
@@ -704,7 +745,8 @@ async function requestLocation(service, view) {
     // manifest is wrong (a bug). Either way the map stays usable.
     const message =
       result && result.reason === 'declined' ? t('map.declined') : t('map.notAvailable');
-    showNote(view, message);
+    if (result && result.reason === 'declined') showLocationDenied(view, message);
+    else showNote(view, message);
     toast(message, { error: true });
     return;
   }
@@ -723,8 +765,12 @@ async function requestLocation(service, view) {
   navigator.geolocation.getCurrentPosition(
     (position) => {
       const { latitude, longitude, accuracy } = position.coords;
-      service.setUserLocation({ lat: latitude, lng: longitude, accuracy });
-      service.centerOn({ lat: latitude, lng: longitude }, 14);
+      // A retry tapped before the map is live passes a null service: the note
+      // still shows, but there is no adapter yet to mark or centre.
+      if (service) {
+        service.setUserLocation({ lat: latitude, lng: longitude, accuracy });
+        service.centerOn({ lat: latitude, lng: longitude }, 14);
+      }
       showNote(
         view,
         typeof accuracy === 'number' && accuracy > 0
@@ -744,7 +790,8 @@ async function requestLocation(service, view) {
       const documentHolds = typeof window.usernode?.hasCapability === 'function'
         && window.usernode.hasCapability('geolocation');
       const message = denied && documentHolds ? t('map.denied') : t('map.locateFailed');
-      showNote(view, message);
+      if (denied && documentHolds) showLocationDenied(view, message);
+      else showNote(view, message);
       toast(message, { error: true });
     },
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
@@ -754,6 +801,62 @@ async function requestLocation(service, view) {
 function showNote(view, message) {
   view.note.style.display = '';
   view.note.textContent = message;
+  // Every non-denial outcome (a success, a reload-pending grant, an ordinary
+  // failure) clears the denied-location help and starts the denial count over.
+  if (view.locationHelp) {
+    view.locationHelp.style.display = 'none';
+    view.locationHelp.replaceChildren();
+  }
+  view.locationDenials = 0;
+}
+
+// A refusal is actionable: the first one offers to ask again, a second one
+// swaps the message for short steps to turn location on in the phone's
+// settings. Both keep the retry button so the person can try again after
+// changing the setting.
+function showLocationDenied(view, message) {
+  const count = (view.locationDenials || 0) + 1;
+  if (count === 1) {
+    // showNote resets the help and the count, so the count is set afterwards.
+    showNote(view, message);
+  } else if (view.note) {
+    // From the second refusal on, the steps replace the message.
+    view.note.style.display = 'none';
+  }
+  view.locationDenials = count;
+  if (!view.locationHelp) return;
+  view.locationHelp.replaceChildren(
+    ...(count === 1
+      ? []
+      : [
+          el('h2', {
+            class: 'text-[13px] font-semibold text-ink',
+            text: t('map.settingsTitle'),
+          }),
+          el(
+            'ol',
+            { class: 'list-decimal flex flex-col gap-1 pl-4' },
+            ['map.settingsStep1', 'map.settingsStep2', 'map.settingsStep3', 'map.settingsStep4'].map(
+              (key) => el('li', { text: t(key) }),
+            ),
+          ),
+        ]),
+    locationRetryButton(view),
+  );
+  view.locationHelp.style.display = '';
+}
+
+// The outline button the Saved screens use. It runs the exact flow the My
+// location control runs, so a retry behaves like a first ask.
+function locationRetryButton(view) {
+  return el('button', {
+    type: 'button',
+    class:
+      'self-start rounded-pill border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+    dataset: { locationRetry: 'true' },
+    text: t('map.allowLocation'),
+    onClick: () => requestLocation(activeService, view),
+  });
 }
 
 function toast(message, { error = false } = {}) {

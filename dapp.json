@@ -195,6 +195,25 @@
       "expectText": "Lalu lintas langsung belum tersambung"
     },
     {
+      "name": "Home location denied state offers Allow location",
+      "path": "/#/?location=denied",
+      "expectSelector": "[data-location-help] [data-location-retry]",
+      "expectText": "Allow location",
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Home shows location settings steps after a second denial",
+      "path": "/#/?location=steps",
+      "expectText": "Turn on location in your phone's settings",
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Location settings steps in Indonesian",
+      "path": "/#/?location=steps&lang=id",
+      "expectText": "Aktifkan lokasi di pengaturan ponsel Anda",
+      "allowConsoleErrors": true
+    },
+    {
       "name": "Search bar renders on Home",
       "path": "/#/",
       "expectSelector": "[data-search-input]"

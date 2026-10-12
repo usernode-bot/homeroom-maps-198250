@@ -70,6 +70,12 @@ export default {
   'map.showingAccuracy': 'Menampilkan lokasi Anda (akurat sekitar {distance}).',
   'map.showing': 'Menampilkan lokasi Anda.',
   'map.locateFailed': 'Kami tidak dapat menentukan lokasi Anda saat ini. Silakan coba lagi.',
+  'map.allowLocation': 'Izinkan lokasi',
+  'map.settingsTitle': 'Aktifkan lokasi di pengaturan ponsel Anda',
+  'map.settingsStep1': 'Buka aplikasi Pengaturan di ponsel Anda.',
+  'map.settingsStep2': 'Buka Lokasi (di iPhone: Privasi & Keamanan, lalu Layanan Lokasi).',
+  'map.settingsStep3': 'Izinkan lokasi untuk browser atau aplikasi Homeroom yang Anda gunakan.',
+  'map.settingsStep4': 'Kembali ke sini dan ketuk Izinkan lokasi. Jika Homeroom bertanya, pilih Izinkan.',
   'map.placeNoPosition': 'Tempat ini tidak punya posisi yang valid, jadi peta tetap di posisinya.',
 
   // Peta 3D (Fase 12H)
