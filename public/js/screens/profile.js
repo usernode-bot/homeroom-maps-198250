@@ -93,6 +93,7 @@ export async function render(ctx) {
     unitsCard(),
     tripsCard(),
     offlineAreasCard(),
+    developerApiCard(),
     businessCard(),
     sharingCard(),
     emptyState({
@@ -157,6 +158,26 @@ function offlineAreasCard() {
         variant: 'secondary',
         attrs: { dataset: { openOfflineAreas: 'true' } },
         onClick: () => router.navigate('offline-areas'),
+      }),
+    ]),
+  ]);
+}
+
+// Developer API — the Phase 12K entry. Same shape as the Trips and Offline
+// Areas cards: a title, one line of context, and the way in. #/developer-api
+// is deep-linkable like every other sub-screen.
+function developerApiCard() {
+  return card([
+    el('p', { class: 'text-base font-semibold text-ink', text: t('profile.developerApiTitle') }),
+    el('p', {
+      class: 'mt-1 text-sm text-muted leading-relaxed',
+      text: t('profile.developerApiBody'),
+    }),
+    el('div', { class: 'mt-3' }, [
+      button(t('developerApi.open'), {
+        variant: 'secondary',
+        attrs: { dataset: { openDeveloperApi: 'true' } },
+        onClick: () => router.navigate('developer-api'),
       }),
     ]),
   ]);

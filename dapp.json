@@ -111,6 +111,24 @@
       "description": "Operator switch for the live traffic layer (Phase 12D). Can only narrow the live-traffic permission gate (T1), never widen it: while the repository documents no traffic-provider rights (docs/traffic-provider-rights.md does not exist) and no traffic adapter is implemented, live traffic stays honestly unavailable no matter how this is set. No traffic API key is declared here; the chosen provider's key gets declared in the same change that implements its adapter, per the platform secrets convention.",
       "required": false,
       "default": "true"
+    },
+    {
+      "key": "API_ENABLED",
+      "description": "Operator switch for the Developer API (Phase 12K). Setting it off turns the whole /api/v1 mount, both the read surface and the key-management surface, into a 503 api_disabled answer, without a redeploy.",
+      "required": false,
+      "default": "true"
+    },
+    {
+      "key": "API_RATE_LIMIT_PER_MINUTE",
+      "description": "Requests per minute per API key on /api/v1. A directions request costs 3 of these. Keys refill continuously; a spent key answers 429 with Retry-After.",
+      "required": false,
+      "default": "60"
+    },
+    {
+      "key": "API_MAX_KEYS_PER_USER",
+      "description": "How many ACTIVE API keys one person may hold at once. Revoking a key frees its slot.",
+      "required": false,
+      "default": "5"
     }
   ],
   "visibility": {
@@ -732,6 +750,41 @@
       "name": "Weather panel copy in Indonesian",
       "path": "/#/?weather=open&lang=id",
       "expectText": "Cuaca tidak tersedia"
+    },
+    {
+      "id": "developer-api.screen",
+      "name": "Developer API screen renders",
+      "path": "/#/developer-api",
+      "expectSelector": "[data-developer-api-host]",
+      "expectText": "Developer API",
+      "visual": true,
+      "impact": [
+        "api/**",
+        "public/js/screens/developer-api.js",
+        "public/js/services/developer-api.js",
+        "public/js/screens/profile.js",
+        "public/js/app.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "server.js",
+        "config.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Profile links to Developer API",
+      "path": "/#/profile",
+      "expectText": "Developer API"
+    },
+    {
+      "name": "Developer API copy in Indonesian",
+      "path": "/#/developer-api?lang=id",
+      "expectText": "API Pengembang"
+    },
+    {
+      "name": "Developer API quick start names the bearer scheme",
+      "path": "/#/developer-api",
+      "expectText": "Authorization: Bearer"
     }
   ],
   "permissions": [

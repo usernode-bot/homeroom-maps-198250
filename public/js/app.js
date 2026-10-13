@@ -19,6 +19,7 @@ import * as trips from './screens/trips.js';
 import * as profile from './screens/profile.js';
 import * as saved from './screens/saved.js';
 import * as offlineAreas from './screens/offline-areas.js';
+import * as developerApi from './screens/developer-api.js';
 // Business (Phase 12J): a Profile sub-screen with its own hash route.
 import * as business from './screens/business.js';
 import * as sharing from './screens/sharing.js';
@@ -41,6 +42,9 @@ router.register('saved', saved);
 // Offline Areas (Phase 12A): also a Profile sub-screen with its own hash
 // route.
 router.register('offline-areas', offlineAreas);
+// Developer API (Phase 12K): also a Profile sub-screen with its own hash
+// route, deep-linkable like the rest.
+router.register('developer-api', developerApi);
 // Business (Phase 12J): the claims-and-businesses dashboard, plus the
 // reviewer queue for configured business reviewers.
 router.register('business', business);

@@ -12,6 +12,9 @@ const {
   PUBLIC_DIR,
   resolveMapConfig,
   COMMUNITY_REVIEWERS,
+  API_ENABLED,
+  API_RATE_LIMIT_PER_MINUTE,
+  API_MAX_KEYS_PER_USER,
   BUSINESS_REVIEWERS,
   LLM_PROXY_TOKEN,
   LLM_ENABLED,
@@ -44,6 +47,11 @@ const { createAnthropicProxy } = require('./assistant/provider');
 const { createAssistantRouter } = require('./assistant/routes');
 const { resolveOfflineConfig } = require('./offline');
 const { resolveOfflineSearchConfig } = require('./offline/search-config');
+// Developer API (Phase 12K): the read-only /api/v1 adapter, its key store,
+// and the platform-JWT verifier it re-uses for the key-management surface.
+const { createApiV1 } = require('./api');
+const { createStore: createApiKeysStore } = require('./api/keys');
+const { createSessionVerifier } = require('./api/middleware');
 const { resolveOfflineRoutingConfig } = require('./offline/routing-config');
 const { resolveTrafficConfig } = require('./traffic');
 
@@ -182,6 +190,40 @@ app.get(/^\/usernode-(?:bridge|native|tailwind)\//, async (req, res) => {
     return res.sendStatus(502);
   }
 });
+
+// ── Developer API (Phase 12K) ─────────────────────────────────────────────
+// The read-only /api/v1 adapter, mounted as ONE additive use() BEFORE the
+// platform auth gate below: v1 requests authenticate with their own API keys
+// (an external caller has no browser JWT, so the gate would 401 them), and
+// the router enforces a valid key on every one of its routes — there are no
+// public v1 paths. Every internal route below keeps its existing gate and
+// behaviour byte-for-byte. The key-management routes the app's own Developer
+// API screen uses (/api/v1/keys) sit inside the same router, gated by the
+// same pinned RS256 verify the gate below performs.
+const keysStore = createApiKeysStore({ pool, maxKeysPerUser: API_MAX_KEYS_PER_USER });
+app.use(
+  '/api/v1',
+  createApiV1({
+    keys: keysStore,
+    searchApi,
+    routingApi,
+    placesApi,
+    communityStore,
+    reportsStore,
+    verifySession: createSessionVerifier({ publicKey: JWT_PUBLIC_KEY, audience: APP_AUDIENCE }),
+    settings: {
+      enabled: API_ENABLED,
+      rateLimitPerMinute: API_RATE_LIMIT_PER_MINUTE,
+      maxKeysPerUser: API_MAX_KEYS_PER_USER,
+      openapiPath: path.join(__dirname, 'docs', 'openapi.yaml'),
+      resolveCapabilities: () => ({
+        searchProvider: searchApi.activeProviderName(),
+        routing: routingApi.resolveRoutingConfig(),
+        placeProvider: placesApi.activeProviderName(),
+      }),
+    },
+  }).router,
+);
 
 // Verify platform-issued JWT if one was passed, then enforce auth on
 // anything not explicitly marked public. The iframe adds `?token=…`
@@ -642,6 +684,10 @@ async function start() {
   await reportsStore.migrate();
   await reputationStore.migrate();
   if (IS_STAGING) await reportsStore.seedStaging();
+  // Developer API keys (Phase 12K): the api_keys table (staging:private) and
+  // its one obviously-fake staging demo row, owned by a fake identity.
+  await keysStore.migrate();
+  await keysStore.seedStaging();
   // Business profiles (Phase 12J): the five additive tables, then staging
   // demo claims/profile by fake owners only.
   await businessStore.migrate();
