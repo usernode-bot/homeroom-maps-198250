@@ -15,6 +15,7 @@ const {
   API_ENABLED,
   API_RATE_LIMIT_PER_MINUTE,
   API_MAX_KEYS_PER_USER,
+  BUSINESS_REVIEWERS,
   LLM_PROXY_TOKEN,
   LLM_ENABLED,
   LOCATION_SHARING_ENABLED,
@@ -26,6 +27,8 @@ const { createCommunityRouter } = require('./community/routes');
 const { parseReviewers } = require('./community/model');
 const { createReportsStore } = require('./reports/store');
 const { createReportsRouter } = require('./reports/routes');
+const { createBusinessStore } = require('./business/store');
+const { createBusinessRouter } = require('./business/routes');
 const { createReputationStore } = require('./community/reputation-store');
 const { createSharingStore } = require('./sharing/store');
 const { createSharingRouter } = require('./sharing/routes');
@@ -82,6 +85,12 @@ const profiles = createProfiles({ pool });
 // events too (report.flagged and friends).
 const reportsStore = createReportsStore({ pool, policies: communityPolicies });
 
+// Business profiles (Phase 12J): claims over places, verified only by a
+// configured business reviewer's decision, with the profile, its revisions,
+// its audit trail and its flags. The profile table is public; the four
+// tables carrying personal data (claims, revisions, events, flags) are
+// staging:private.
+const businessStore = createBusinessStore({ pool, platformOrigin: PLATFORM_ORIGIN });
 // Phase 12I, slice 1: the reputation ledger. Invisible for now — no routes,
 // no UI. It listens on the shared policies registry for the committed events
 // both stores already publish and records the reviewer-confirmed ones (the
@@ -461,6 +470,16 @@ app.use(
   }),
 );
 
+// Business profiles (Phase 12J). Reviewers are the BUSINESS_REVIEWERS
+// configuration falling back to COMMUNITY_REVIEWERS — the same comma-separated
+// username convention the community and reports routers use. An empty set is
+// a valid state: claims then wait in an honest "no reviewer configured" state
+// instead of anyone self-appointing.
+app.use(
+  '/api/business',
+  createBusinessRouter({ store: businessStore, reviewers: parseReviewers(BUSINESS_REVIEWERS || COMMUNITY_REVIEWERS) }),
+);
+
 // Places — the two read routes of the place service (places/index.js). Both
 // are GET under /api/, so the auth gate above covers them; the provider key
 // never leaves the server. The typed error codes from places/provider.js map
@@ -669,6 +688,10 @@ async function start() {
   // its one obviously-fake staging demo row, owned by a fake identity.
   await keysStore.migrate();
   await keysStore.seedStaging();
+  // Business profiles (Phase 12J): the five additive tables, then staging
+  // demo claims/profile by fake owners only.
+  await businessStore.migrate();
+  if (IS_STAGING) await businessStore.seedStaging();
   await sharingStore.migrate();
   server = app.listen(port, () => console.log(`Listening on :${port}`));
   // Let Envoy retire idle upstream connections at 60s, with a 15s margin.
