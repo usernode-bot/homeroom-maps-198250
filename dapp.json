@@ -43,6 +43,12 @@
       "default": ""
     },
     {
+      "key": "BUSINESS_REVIEWERS",
+      "description": "Comma-separated Homeroom usernames who may review business claims (verify or reject, with the claim's contact details and evidence) and moderate business profiles (suspend or reinstate). Left empty, the business review queue falls back to COMMUNITY_REVIEWERS; empty there too means claims wait and nobody can review.",
+      "required": false,
+      "default": ""
+    },
+    {
       "key": "PLACE_PROVIDER",
       "description": "Which place-data provider adapter to use for per-place depth: photos, opening hours, phone, website, rating, business status. No adapter is implemented yet (Phase 3 ships the model, service and UI with honest Not-available states), so leaving this unset keeps /api/places answering 501 instead of serving fabricated POI data. Selection criteria, in order: (1) worldwide coverage of the place types the app surfaces, (2) per-place detail depth, (3) licensing that permits storing and displaying results, (4) cost at this app's scale, (5) the required credential declarable through the Secrets UI. When an adapter is implemented, its API key is declared in that change per the platform secrets convention.",
       "required": false
@@ -644,6 +650,37 @@
         "server.js",
         "dapp.json"
       ]
+    },
+    {
+      "id": "business.dashboard",
+      "name": "Business dashboard renders the person's claims and businesses",
+      "path": "/#/business",
+      "expectSelector": "[data-business-host]",
+      "visual": true,
+      "impact": [
+        "business/**",
+        "public/js/screens/business.js",
+        "public/js/components/business/**",
+        "public/js/services/business.js",
+        "public/js/screens/place-detail.js",
+        "public/js/screens/profile.js",
+        "public/js/app.js",
+        "public/js/i18n/locales/en.js",
+        "public/js/i18n/locales/id.js",
+        "server.js",
+        "config.js",
+        "dapp.json"
+      ]
+    },
+    {
+      "name": "Business queue is reviewer-only, and says so",
+      "path": "/#/business?view=queue",
+      "expectText": "Only business reviewers can see the review queue."
+    },
+    {
+      "name": "Business dashboard copy in Indonesian",
+      "path": "/#/business?lang=id",
+      "expectText": "Bisnis"
     },
     {
       "name": "Profile links to Location Sharing",

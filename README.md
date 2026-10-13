@@ -132,6 +132,27 @@ A global map and location platform, built together with its community.
   rendered. The single unlock is a verifiable `docs/tile-provider-rights.md`
   (provider, `bulk-download: permitted`, evidence URL) — nothing else, and no
   code change, enables downloads.
+- **Business profiles and claims (Phase 12J)** — a place's detail view carries
+  a Business section: a verified profile (name, address, category, phone,
+  website, opening hours, description) shown to everyone, and a claim flow for
+  people who run the business. Login is never proof of ownership: a claim is
+  an application with a contact detail and up to three evidence photos stored
+  through the platform's file storage with private visibility, and ONLY a
+  configured reviewer's decision verifies it (the `BUSINESS_REVIEWERS`
+  secret, falling back to `COMMUNITY_REVIEWERS`; empty means nobody can
+  review). Rules live in `business/model.js`, Postgres access in
+  `business/store.js` and routes (`/api/business/*`) in `business/routes.js`.
+  At most one pending claim per place is a database fact (a partial unique
+  index; a lost race answers a typed 409 and is recorded as `superseded` so a
+  reviewer can see who else tried). Claims expire after 30 days pending, a
+  rejection starts a 7-day cool-down, and a person holds at most 3 pending
+  claims. The owner edits the profile (every edit is a stored revision), a
+  reviewer suspends or reinstates it (a suspended profile frees the place;
+  verifying a new claim transfers ownership, audited), and anyone but the
+  owner can flag a profile once. The Business dashboard (`#/business`) lists a
+  person's claims and businesses; reviewers get the review queue. Contact
+  values and evidence links leave the app only through the reviewer surfaces;
+  the public profile names its owner by username only.
 - **Weather (Phase 12G, no provider connected)** — the Weather control on the
   live map opens a localized panel that reports current conditions for the
   map area on screen: state machine (`public/js/services/weather-core.js`)
@@ -156,9 +177,9 @@ A global map and location platform, built together with its community.
   documented placeholders for the stages that are still unbuilt, so no screen
   can fake map or community behaviour.
 - **Tests** — `npm test` runs the whole suite (`node --test`): search,
-  places, i18n, routing, navigation, community, saved places and the assistant.
-  The Postgres
-  suites (community, saved places, profile) need a database:
+  places, i18n, routing, navigation, community, saved places, the assistant
+  and business profiles. The Postgres
+  suites (community, saved places, profile, business) need a database:
   `TEST_DATABASE_URL` (or the build worker's `INLOOP_DATABASE_URL`); without
   one they are skipped.
 
