@@ -57,8 +57,8 @@ function createReportsRouter({ store, reviewers = new Set() }) {
     })),
   );
 
-  router.get('/', handle((viewer, req) => store.list(viewer, req.query)));
-  router.get('/:id', handle((viewer, req) => store.get(viewer, req.params.id)));
+  router.get('/', handle((viewer, req) => store.list(viewer, req.query, req.now)));
+  router.get('/:id', handle((viewer, req) => store.get(viewer, req.params.id, req.now)));
   router.post('/', handle((viewer, req) => store.create(viewer, req.body)));
   router.put(
     '/:id/reaction',

@@ -156,6 +156,17 @@ const PUBLIC_API_PATHS = new Set(['/health', '/api/config']);
 
 app.use(express.json());
 
+// "Now" through the platform, never the raw clock: a staging preview opened
+// at a chosen moment carries that moment in a header or ?un-now=, and the
+// report-expiry reads below honour it. Production ignores both entirely —
+// the code path is the same everywhere, only the value of "now" differs.
+const PREVIEW_NOW = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+function requestNow(req) {
+  const raw = IS_STAGING ? (req.headers['x-usernode-now'] || req.query['un-now']) : null;
+  return typeof raw === 'string' && PREVIEW_NOW.test(raw) ? new Date(raw) : new Date();
+}
+app.use((req, _res, next) => { req.now = requestNow(req); next(); });
+
 // The platform's three centrally hosted files — the bridge, the native UI
 // kit and the Tailwind runtime — are reachable at these paths on this app's
 // OWN origin, so index.html can load them with a RELATIVE path and never
