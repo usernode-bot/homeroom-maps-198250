@@ -29,10 +29,14 @@ let base;
 let policies;
 const schema = `reports_test_${process.pid}_${Date.now()}`;
 
-async function call(method, path, { as = 'alice', body } = {}) {
+async function call(method, path, { as = 'alice', body, now } = {}) {
   const res = await fetch(base + path, {
     method,
-    headers: { 'content-type': 'application/json', 'x-test-user': as },
+    headers: {
+      'content-type': 'application/json',
+      'x-test-user': as,
+      ...(now ? { 'x-test-now': now } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: res.status, body: await res.json() };
@@ -69,6 +73,14 @@ test.before(async () => {
   app.use(express.json());
   app.use((req, _res, next) => {
     req.user = USERS[req.headers['x-test-user']];
+    next();
+  });
+  // The clock stand-in, the same shape the platform's requestNow middleware
+  // has: a header names the moment, as ?un-now= does in a staging preview.
+  app.use((req, _res, next) => {
+    req.now = req.headers['x-test-now']
+      ? new Date(req.headers['x-test-now'])
+      : new Date();
     next();
   });
   app.use('/api/reports', createReportsRouter({ store, reviewers: new Set(['rita']) }));
@@ -326,6 +338,56 @@ test('expiration is derived on read: stale reports read Expired and leave the fe
     (await call('GET', '/?view=recent', { as: 'bob' })).body.items.some((x) => x.id === p.id),
     'a rejected report keeps its standing answer in the feed',
   );
+});
+
+test('reads honour an injected clock: expiry is decided by the supplied timestamp', { skip }, async () => {
+  const p = (await call('POST', '/', { as: 'alice', body: report({ type: 'fire' }) })).body;
+
+  // Fix the expiry to a known moment: two hours from the database's now().
+  const upd = await pool.query(
+    "UPDATE reports SET expires_at = now() + interval '2 hours' WHERE id = $1 RETURNING expires_at",
+    [p.id],
+  );
+  const expiry = upd.rows[0].expires_at;
+
+  // With the real clock the report is pending and in the feed.
+  const before = await call('GET', '/?view=recent', { as: 'bob' });
+  assert.ok(before.body.items.some((x) => x.id === p.id), 'before the injected moment the report is in Recent');
+
+  // Injected clock one hour past expiry: gone from Recent and Nearby, the
+  // detail reads expired, and Mine keeps it for the reporter.
+  const past = new Date(expiry.getTime() + 3600 * 1000).toISOString();
+  const recent = await call('GET', '/?view=recent', { as: 'bob', now: past });
+  assert.ok(!recent.body.items.some((x) => x.id === p.id), 'injected clock past expiry drops the report from Recent');
+  const near = await call('GET', '/?view=nearby&near=52.52,13.40&radius=100', { as: 'bob', now: past });
+  assert.ok(!near.body.items.some((x) => x.id === p.id), 'injected clock past expiry drops the report from Nearby');
+  const got = await call('GET', `/${p.id}`, { as: 'bob', now: past });
+  assert.equal(got.body.status, 'pending');
+  assert.equal(got.body.effectiveStatus, 'expired');
+  const mine = await call('GET', '/?view=mine', { as: 'alice', now: past });
+  const row = mine.body.items.find((x) => x.id === p.id);
+  assert.ok(row, 'Mine keeps the reporter’s report under the injected clock');
+  assert.equal(row.effectiveStatus, 'expired');
+
+  // Injected clock one hour before expiry: everything stays as it was.
+  const future = new Date(expiry.getTime() - 3600 * 1000).toISOString();
+  const stillThere = await call('GET', '/?view=recent', { as: 'bob', now: future });
+  assert.ok(stillThere.body.items.some((x) => x.id === p.id), 'injected clock before expiry keeps the report in Recent');
+  assert.equal(stillThere.body.items.find((x) => x.id === p.id).effectiveStatus, 'pending');
+});
+
+test('a rejected report keeps its standing answer under an injected clock', { skip }, async () => {
+  const p = (await call('POST', '/', { as: 'alice', body: report() })).body;
+  await call('POST', `/${p.id}/status`, { as: 'rita', body: { status: 'verified' } });
+  await call('POST', `/${p.id}/status`, { as: 'rita', body: { status: 'rejected' } });
+  // Push its expiry into the past directly; nothing ever stores 'expired'.
+  await pool.query("UPDATE reports SET expires_at = now() - interval '1 hour' WHERE id = $1", [p.id]);
+
+  const past = new Date(Date.now() + 2 * 3600 * 1000).toISOString();
+  const recent = await call('GET', '/?view=recent', { as: 'bob', now: past });
+  const row = recent.body.items.find((x) => x.id === p.id);
+  assert.ok(row, 'a rejected report keeps its standing answer in the feed under the injected clock');
+  assert.equal(row.effectiveStatus, 'rejected');
 });
 
 test('paging reports hasMore and the next offset', { skip }, async () => {

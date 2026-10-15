@@ -96,9 +96,10 @@ SELECT r.*,
 // The "current" filter used by Recent and Nearby: everything that has NOT
 // derived-expired. A rejected report keeps its standing answer, so it stays
 // (its Rejected status pill says what happened). Mirrors
-// model.effectiveStatus exactly: expired = now() > expires_at AND not
-// rejected.
-const CURRENT_SQL = `NOT (now() > r.expires_at AND r.status <> 'rejected')`;
+// model.effectiveStatus exactly: expired = clock > expires_at AND not
+// rejected. The clock is bound as $2 ($1 is always the viewer's id), so
+// reads honour the caller's supplied "now" instead of the database's.
+const CURRENT_SQL = `NOT ($2::timestamptz > r.expires_at AND r.status <> 'rejected')`;
 
 function iso(v) {
   return v ? new Date(v).toISOString() : null;
@@ -124,7 +125,7 @@ function toReport(row) {
 // The API shape. `viewer` decides the permission block; nothing in it is
 // guessed client-side. `effectiveStatus` carries the derived expiration so
 // the client never derives it again.
-function toApi(row, viewer) {
+function toApi(row, viewer, clock = new Date()) {
   const report = toReport(row);
   const canReact = model.canReact(viewer, report);
   const canFlag = model.canFlag(viewer, report);
@@ -139,7 +140,7 @@ function toApi(row, viewer) {
     reporter: { id: row.reporter_id, username: row.reporter_username },
     status: report.status,
     statusLabel: model.statusLabel(report.status),
-    effectiveStatus: model.effectiveStatus(report),
+    effectiveStatus: model.effectiveStatus(report, clock),
     expiresAt: iso(row.expires_at),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
@@ -208,7 +209,7 @@ function createReportsStore({ pool, policies }) {
     );
   }
 
-  async function list(viewer, rawQuery) {
+  async function list(viewer, rawQuery, clock = new Date()) {
     const q = model.parseFeedQuery(rawQuery);
     const params = [viewer.id];
     let where = 'true';
@@ -217,12 +218,16 @@ function createReportsStore({ pool, policies }) {
 
     if (q.view === 'mine') {
       // The reporter's own history: expired reports stay visible so the
-      // reporter can see what they reported and what became of it.
+      // reporter can see what they reported and what became of it. The
+      // expiry filter is not in the SQL here, so the clock is not bound
+      // either: an unreferenced parameter has no inferable type and
+      // Postgres rejects the query.
       params.push(viewer.id);
       where += ` AND r.reporter_id = $${params.length}`;
       order = 'r.updated_at DESC, r.id DESC';
     } else if (q.view === 'nearby') {
-      params.push(q.near.lat, q.near.lng, q.radiusKm);
+      // CURRENT_SQL reads the clock as $2 ($1 is always the viewer's id).
+      params.push(clock, q.near.lat, q.near.lng, q.radiusKm);
       const [la, ln, r] = [params.length - 2, params.length - 1, params.length];
       from = `(SELECT s.*, 6371 * 2 * asin(sqrt(
                   power(sin(radians(s.lat - $${la}) / 2), 2) +
@@ -232,6 +237,7 @@ function createReportsStore({ pool, policies }) {
       where += ` AND ${CURRENT_SQL} AND r.distance_km <= $${r}`;
       order = 'r.distance_km ASC, r.id DESC';
     } else if (!q.includeExpired) {
+      params.push(clock);
       where += ` AND ${CURRENT_SQL}`;
     }
 
@@ -254,14 +260,14 @@ function createReportsStore({ pool, policies }) {
     const hasMore = rows.length > q.limit;
     return {
       view: q.view,
-      items: rows.slice(0, q.limit).map((row) => toApi(row, viewer)),
+      items: rows.slice(0, q.limit).map((row) => toApi(row, viewer, clock)),
       hasMore,
       nextOffset: hasMore ? q.offset + q.limit : null,
       ...(q.view === 'nearby' ? { near: q.near, radiusKm: q.radiusKm } : {}),
     };
   }
 
-  async function get(viewer, rawId) {
+  async function get(viewer, rawId, clock = new Date()) {
     const id = parseId(rawId);
     const row = await readRow(pool, viewer, id);
     const { rows: events } = await pool.query(
@@ -270,7 +276,7 @@ function createReportsStore({ pool, policies }) {
       [id],
     );
     return {
-      ...toApi(row, viewer),
+      ...toApi(row, viewer, clock),
       history: events.map((e) => ({
         from: e.from_status,
         to: e.to_status,
