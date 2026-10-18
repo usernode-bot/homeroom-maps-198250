@@ -65,7 +65,15 @@
   </script>
 
   <title>Homeroom Maps</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%236366f1'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
+  <!-- App icon: a static asset so tabs, bookmarks, phones and other
+       software can load it. icon.svg is the source; the PNGs are rendered
+       from the same geometry for contexts that cannot use SVG. -->
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" sizes="any">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 
   <!-- Tailwind, PRECOMPILED per app. npm run build compiles tailwind.config.js
        and styles/tailwind-input.css to public/tailwind.css on every image

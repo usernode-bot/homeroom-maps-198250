@@ -1,6 +1,7 @@
 {
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
+  "icon": { "image": "brand/icon.png" },
   "secrets": [
     {
       "key": "SEARCH_PROVIDER",
