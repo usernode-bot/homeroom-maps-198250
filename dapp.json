@@ -1,6 +1,9 @@
 {
   "name": "Homeroom Maps",
   "description": "A global map and location platform built together with its community.",
+  "icon": {
+    "image": "brand/icon.png"
+  },
   "secrets": [
     {
       "key": "SEARCH_PROVIDER",
@@ -49,6 +52,18 @@
     "view": "public"
   },
   "tests": [
+    {
+      "name": "Shell declares the SVG favicon",
+      "path": "/#/",
+      "expectSelector": "link[rel=\"icon\"][href=\"/icon.svg\"]",
+      "allowConsoleErrors": true
+    },
+    {
+      "name": "Shell declares the web manifest",
+      "path": "/#/",
+      "expectSelector": "link[rel=\"manifest\"][href=\"/manifest.webmanifest\"]",
+      "allowConsoleErrors": true
+    },
     {
       "id": "home.map",
       "name": "Home map renders",
