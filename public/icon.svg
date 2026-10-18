@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Homeroom Maps">
+  <title>Homeroom Maps</title>
+  <circle cx="32" cy="32" r="32" fill="#6366f1"/>
+  <circle cx="32" cy="26.9" r="12.2" fill="#ffffff"/>
+  <path d="M23.7 34.6 32 51.2l8.3-16.6Z" fill="#ffffff"/>
+  <circle cx="32" cy="26.9" r="4.5" fill="#6366f1"/>
+</svg>

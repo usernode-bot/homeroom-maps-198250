@@ -65,7 +65,14 @@
   </script>
 
   <title>Homeroom Maps</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%236366f1'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
+  <!-- App icon and installed-app metadata. One mark: indigo #6366f1
+       disc, white map pin. icon.svg is the vector; the PNGs are the
+       same art rasterised for touch icons and home screens. -->
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 
   <!-- Tailwind, PRECOMPILED per app. npm run build compiles tailwind.config.js
        and styles/tailwind-input.css to public/tailwind.css on every image
