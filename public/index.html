@@ -65,7 +65,10 @@
   </script>
 
   <title>Homeroom Maps</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%236366f1'/><circle cx='50' cy='50' r='18' fill='white'/></svg>">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon-maskable.svg">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0b0d12">
 
   <!-- Tailwind, PRECOMPILED per app. npm run build compiles tailwind.config.js
        and styles/tailwind-input.css to public/tailwind.css on every image
@@ -110,6 +113,8 @@
             || (media.matches ? 'dark' : 'light');
         document.documentElement.classList.toggle('dark', theme === 'dark');
         document.documentElement.style.colorScheme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', theme === 'dark' ? '#0b0d12' : '#f6f7f9');
       }
       apply();
       window.addEventListener('usernode:theme-changed', apply);

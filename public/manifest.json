@@ -1,0 +1,14 @@
+{
+  "name": "Homeroom Maps",
+  "short_name": "Homeroom Maps",
+  "description": "A global map and location platform built together with its community.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

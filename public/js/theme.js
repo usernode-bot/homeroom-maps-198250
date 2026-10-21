@@ -35,6 +35,8 @@ export function applyTheme(preference = getThemePreference()) {
   const theme = resolve(preference);
   document.documentElement.classList.toggle('dark', theme === 'dark');
   document.documentElement.style.colorScheme = theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#0b0d12' : '#f6f7f9');
   setState({ themePreference: preference });
   return theme;
 }

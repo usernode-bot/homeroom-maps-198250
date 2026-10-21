@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512">
+  <title>Homeroom Maps</title>
+  <rect width="100" height="100" fill="#6366f1"/>
+  <g fill="#ffffff" transform="translate(14 15.5) scale(3)">
+    <path d="M20 10c0 6-8 11-8 11s-8-5-8-11a8 8 0 0 1 16 0Z"/>
+    <circle cx="12" cy="10" r="3" fill="#6366f1"/>
+  </g>
+</svg>
