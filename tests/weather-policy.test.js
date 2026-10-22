@@ -7,6 +7,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { resolveWeatherProviderRights, RIGHTS_DOC_PATH } = require('../weather/provider-policy');
 
 const read = (doc) => () => doc;
@@ -105,6 +108,30 @@ test('prose mentioning the markers on other lines cannot authorize anything', ()
   assert.equal(denied.permitted, false);
 });
 
-test('the gate reads the documented path by default', () => {
-  assert.equal(RIGHTS_DOC_PATH, 'docs/weather-provider-rights.md');
+test('the gate reads the repository docs directory by default', () => {
+  assert.ok(path.isAbsolute(RIGHTS_DOC_PATH));
+  assert.equal(RIGHTS_DOC_PATH, path.join(__dirname, '..', 'docs', 'weather-provider-rights.md'));
+});
+
+test('the default rights path resolves from a non-repository-root working directory', () => {
+  const repoDocs = path.join(__dirname, '..', 'docs');
+  const previousCwd = process.cwd();
+  process.chdir(os.tmpdir());
+  try {
+    // The default path is computed from __dirname at module load, so it must
+    // not move with the working directory — the old CWD-relative default did.
+    assert.ok(path.isAbsolute(RIGHTS_DOC_PATH));
+    assert.equal(RIGHTS_DOC_PATH, path.join(repoDocs, 'weather-provider-rights.md'));
+    // The discriminator: a CWD-relative default would resolve to
+    // <tmpdir>/docs here, which does not exist; the module-relative one
+    // points at the repository's docs directory, which does.
+    assert.equal(fs.existsSync(path.dirname(RIGHTS_DOC_PATH)), true);
+    // With all defaults (the real readFileSync), the absent document still
+    // fails closed from a foreign working directory.
+    const denied = resolveWeatherProviderRights('example-weather');
+    assert.equal(denied.permitted, false);
+    assert.equal(denied.blocker, 'W1');
+  } finally {
+    process.chdir(previousCwd);
+  }
 });

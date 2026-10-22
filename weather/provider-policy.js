@@ -28,8 +28,9 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 
-const RIGHTS_DOC_PATH = 'docs/weather-provider-rights.md';
+const RIGHTS_DOC_PATH = path.join(__dirname, '..', 'docs', 'weather-provider-rights.md');
 
 function resolveWeatherProviderRights(providerName, { docPath = RIGHTS_DOC_PATH, readFileSync = fs.readFileSync } = {}) {
   if (!providerName) {
